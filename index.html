@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SkyGuard — 3D Airport Security Checkpoint</title>
+    <meta
+      name="description"
+      content="Hyper-real 3D airport security checkpoint simulator: inspect travel IDs with UV blacklight, operate a dual-energy X-ray luggage scanner, and earn Federal Air Marshal clearance."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Full-bleed 3D WebGL Airport Terminal Canvas -->
+      <div id="viewport-3d" aria-label="3D Airport Security Checkpoint"></div>
+
+      <!-- Top Aviation Security Telemetry Bar -->
+      <header id="hud-top" class="hud-top hidden">
+        <div class="hud-brand">
+          <span class="badge-plate" id="hud-rank-badge">LVL-1</span>
+          <div class="brand-meta">
+            <div class="brand-title" id="hud-shift-title">SHIFT 01 • CONCOURSE B LANE 04</div>
+            <div class="brand-sub">
+              <span>TODAY: <strong id="hud-today-date">NOV 14, 2026</strong></span>
+              <span class="sep">|</span>
+              <span>PAX <strong id="hud-pax-count">1 / 6</strong></span>
+              <span class="sep">|</span>
+              <span>STREAK <strong id="hud-streak">0</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="hud-progression">
+          <div class="marshal-meter">
+            <div class="marshal-label">
+              <span id="hud-rank-title">TSA Trainee</span>
+              <span class="mono" id="hud-xp-text">0 / 300 XP</span>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" id="hud-xp-bar" style="width: 0%"></div>
+            </div>
+            <div class="marshal-goal" id="hud-marshal-goal">
+              AIR MARSHAL FLIGHT DUTY UNLOCKS AT LVL 5
+            </div>
+          </div>
+        </div>
+
+        <div class="hud-right-controls">
+          <div class="credits-box" title="Checkpoint Upgrade Credits">
+            <span class="credits-lbl">CREDITS</span>
+            <span class="credits-val mono" id="hud-credits">$0</span>
+          </div>
+          <button id="btn-rules" class="icon-btn" type="button" title="Toggle Shift Directives & Watchlist">
+            DIRECTIVES
+          </button>
+          <button id="btn-mute" class="icon-btn" type="button" title="Mute / Unmute Audio">
+            AUDIO ON
+          </button>
+        </div>
+      </header>
+
+      <!-- Passenger Dialogue & Status Banner (floating gently near podium) -->
+      <aside id="pax-dialogue" class="pax-dialogue hidden" aria-live="polite">
+        <div class="dialogue-tag">PASSENGER AT PODIUM</div>
+        <p id="pax-dialogue-text"></p>
+      </aside>
+
+      <!-- Collapsible Right-Side Shift Directives & Federal BOLO Watchlist Drawer -->
+      <aside id="rules-drawer" class="rules-drawer hidden">
+        <div class="drawer-header">
+          <span>ACTIVE SHIFT DIRECTIVES</span>
+          <button id="btn-close-rules" class="drawer-close" type="button" aria-label="Close">✕</button>
+        </div>
+        <div class="drawer-body">
+          <div class="directive-date">
+            CURRENT TERMINAL DATE: <strong id="drawer-date">NOV 14, 2026</strong>
+          </div>
+          <ul id="drawer-rules-list" class="rules-list"></ul>
+          <div id="watchlist-section" class="watchlist-section hidden">
+            <div class="watchlist-title">FEDERAL BOLO WATCHLIST</div>
+            <div id="watchlist-entries" class="watchlist-entries"></div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Station 2: Document & UV Inspection Console -->
+      <section id="station-documents" class="station-tray docs-tray hidden" aria-label="Document Inspection Desk">
+        <div class="tray-header">
+          <div class="tray-title-group">
+            <span class="tray-title">CREDENTIAL AUTHENTICATION DESK</span>
+            <span class="tray-hint">Compare photo against passenger above • Check expiry, name, date & UV seal</span>
+          </div>
+          <div class="tray-tools">
+            <button id="btn-uv-toggle" class="tool-btn uv-btn" type="button">
+              UV BLACKLIGHT: OFF <kbd>U</kbd>
+            </button>
+            <div id="bolo-alert-pill" class="bolo-alert-pill hidden">BOLO SURNAME MATCH</div>
+          </div>
+        </div>
+        <div class="docs-grid">
+          <div class="doc-card-wrap">
+            <div class="doc-caption">PHOTO ID (MOVE CURSOR TO SCAN WITH UV)</div>
+            <canvas id="canvas-id" width="440" height="270"></canvas>
+          </div>
+          <div class="doc-card-wrap">
+            <div class="doc-caption">AIRLINE BOARDING PASS</div>
+            <canvas id="canvas-boarding" width="440" height="205"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- Station 3: Dual-Energy X-Ray Scanner Monitor Console -->
+      <section id="station-xray" class="station-tray xray-tray hidden" aria-label="Dual-Energy X-Ray Console">
+        <div class="xray-bezel">
+          <div class="xray-topbar">
+            <div class="xray-brand">
+              <span class="xray-led"></span>
+              <span>HI-SCAN 6040-2iS DUAL-ENERGY MONITOR</span>
+            </div>
+            <div class="xray-status mono" id="xray-flagged-status">CLICK SUSPECTED CONTRABAND TO FLAG (0 FLAGGED)</div>
+          </div>
+
+          <div class="xray-screen-wrap">
+            <canvas id="canvas-xray" width="680" height="330"></canvas>
+          </div>
+
+          <div class="xray-controls">
+            <div class="control-cluster">
+              <span class="cluster-lbl">CONVEYOR BELT</span>
+              <button class="hw-btn" data-belt="REV" type="button">◀ REV <kbd>A</kbd></button>
+              <button class="hw-btn active" data-belt="STOP" type="button">■ STOP <kbd>S</kbd></button>
+              <button class="hw-btn" data-belt="FWD" type="button">▶ FWD <kbd>F</kbd></button>
+            </div>
+            <div class="control-cluster">
+              <span class="cluster-lbl">DUAL-ENERGY FILTER</span>
+              <button class="hw-btn active" data-xray-mode="STD" type="button">STD</button>
+              <button class="hw-btn" data-xray-mode="OS" type="button" title="Organic Stripping: hides clothing/organics">
+                OS (NO ORG)
+              </button>
+              <button class="hw-btn" data-xray-mode="MS" type="button" title="High Penetration Metal Boost">
+                MS (METAL+)
+              </button>
+              <button class="hw-btn" data-xray-mode="INV" type="button" title="Inverted High-Detail B&W">
+                INV (B&amp;W)
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Bottom Dock: Station Camera Switcher + Decision Stamp Controls -->
+      <footer id="hud-bottom" class="hud-bottom hidden">
+        <nav class="station-switcher" aria-label="Checkpoint Stations">
+          <button class="station-btn active" data-station="overview" type="button">
+            <span class="station-key">1</span>
+            <span>OVERVIEW</span>
+          </button>
+          <button class="station-btn" data-station="documents" type="button">
+            <span class="station-key">2</span>
+            <span>INSPECT ID &amp; PASS</span>
+          </button>
+          <button class="station-btn" data-station="xray" type="button">
+            <span class="station-key">3</span>
+            <span>X-RAY SCANNER</span>
+            <span class="flag-dot hidden" id="nav-flag-count">0</span>
+          </button>
+        </nav>
+
+        <div class="decision-bar">
+          <button id="btn-clear" class="decision-btn btn-clear" type="button">
+            <span class="btn-main">CLEAR PASSENGER</span>
+            <span class="btn-sub">ID Valid &amp; Bag Clean <kbd>C</kbd></span>
+          </button>
+          <button id="btn-deny" class="decision-btn btn-deny" type="button">
+            <span class="btn-main">DENY BOARDING</span>
+            <span class="btn-sub">Expired / Mismatched ID <kbd>D</kbd></span>
+          </button>
+          <button id="btn-detain" class="decision-btn btn-detain" type="button">
+            <span class="btn-main">CONFISCATE &amp; DETAIN</span>
+            <span class="btn-sub">Contraband / Forgery / BOLO <kbd>X</kbd></span>
+          </button>
+        </div>
+      </footer>
+
+      <!-- Live Feedback Notification Toast -->
+      <div id="feedback-toast" class="feedback-toast hidden" role="status">
+        <div class="toast-head">
+          <span id="toast-headline">PASSENGER CLEARED</span>
+          <span class="mono" id="toast-rewards">+80 XP  +$45</span>
+        </div>
+        <p id="toast-detail"></p>
+      </div>
+
+      <!-- Start / Shift Briefing Modal -->
+      <div id="modal-briefing" class="modal-backdrop">
+        <div class="modal-panel briefing-panel">
+          <div class="modal-kicker">FEDERAL AVIATION SECURITY ADMINISTRATION</div>
+          <h1 id="briefing-title">SKYGUARD: AIRPORT SECURITY</h1>
+          <p class="modal-lead" id="briefing-subtitle">
+            Inspect passenger credentials, scan luggage with dual-energy X-ray imaging, stop contraband, and climb the ranks to earn your Federal Air Marshal wings.
+          </p>
+
+          <div class="briefing-meta-row">
+            <div class="meta-chip">
+              <span class="meta-k">ASSIGNMENT</span>
+              <span class="meta-v" id="briefing-gate">CONCOURSE B • LANE 04</span>
+            </div>
+            <div class="meta-chip">
+              <span class="meta-k">SHIFT DATE</span>
+              <span class="meta-v" id="briefing-date">NOV 14, 2026</span>
+            </div>
+            <div class="meta-chip">
+              <span class="meta-k">PASSENGER QUOTA</span>
+              <span class="meta-v" id="briefing-quota">6 PASSENGERS</span>
+            </div>
+          </div>
+
+          <div class="briefing-rules-box">
+            <div class="box-label">SHIFT SCREENING PROTOCOLS</div>
+            <ul id="briefing-rules-list"></ul>
+          </div>
+
+          <div id="briefing-watchlist-box" class="briefing-watchlist hidden">
+            <div class="box-label alert">ACTIVE BOLO WATCHLIST TARGETS</div>
+            <div id="briefing-watchlist-list"></div>
+          </div>
+
+          <div class="modal-actions">
+            <button id="btn-start-shift" class="primary-cta" type="button">
+              OPEN SECURITY LANE
+            </button>
+            <button id="btn-reset-save" class="secondary-cta hidden" type="button">
+              RESET CAREER
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- End-of-Shift Debrief & Upgrade Shop Modal -->
+      <div id="modal-debrief" class="modal-backdrop hidden">
+        <div class="modal-panel debrief-panel">
+          <div class="modal-kicker" id="debrief-kicker">SHIFT COMPLETE • PERFORMANCE AUDIT</div>
+          <h2 id="debrief-title">SHIFT 01 DEBRIEF</h2>
+
+          <div class="debrief-stats">
+            <div class="stat-box">
+              <span class="stat-lbl">ACCURACY</span>
+              <span class="stat-val mono" id="stat-accuracy">100%</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-lbl">CONTRABAND SEIZED</span>
+              <span class="stat-val mono" id="stat-contraband">0</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-lbl">CURRENT RANK</span>
+              <span class="stat-val" id="stat-rank">TSA Trainee</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-lbl">AVAILABLE CREDITS</span>
+              <span class="stat-val mono accent" id="stat-credits">$0</span>
+            </div>
+          </div>
+
+          <div id="air-marshal-banner" class="air-marshal-banner">
+            <div class="am-left">
+              <div class="am-badge">FAM</div>
+              <div>
+                <div class="am-title" id="am-banner-title">AIR MARSHAL QUALIFICATION TRACK</div>
+                <div class="am-desc" id="am-banner-desc">
+                  Reach Level 5 to unlock in-flight Air Marshal hijacker interdiction missions (Phase 2).
+                </div>
+              </div>
+            </div>
+            <div class="am-status mono" id="am-banner-status">LVL 1 / 5</div>
+          </div>
+
+          <div class="shop-section">
+            <div class="box-label">CHECKPOINT HARDWARE UPGRADES</div>
+            <div id="upgrade-grid" class="upgrade-grid"></div>
+          </div>
+
+          <div class="modal-actions">
+            <button id="btn-next-shift" class="primary-cta" type="button">
+              PROCEED TO NEXT SHIFT
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
