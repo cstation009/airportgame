@@ -1,4 +1,4 @@
-import type { BagData, BagItemInstance } from './types';
+import type { BagData, BagItemInstance, ItemTemplate } from './types';
 
 export interface BagSearchRenderOptions {
   selectedItemId: string | null;
@@ -650,6 +650,32 @@ export function renderBagSearchTable(
   ctx.font = '700 10.5px "JetBrains Mono", monospace';
   ctx.fillText(`SECONDARY SEARCH TABLE  •  ${bag.id} (${bag.type.toUpperCase()})`, 14, 18);
   ctx.fillText('DRAG ITEMS TO RUMMAGE • CLICK TO INSPECT', width - 275, 18);
+
+  ctx.restore();
+}
+
+export function renderPhysicalItemThumbnail(
+  ctx: CanvasRenderingContext2D,
+  template: ItemTemplate,
+): void {
+  const { width, height } = ctx.canvas;
+  ctx.save();
+  ctx.fillStyle = '#18202c';
+  ctx.fillRect(0, 0, width, height);
+
+  const scale = Math.min((width - 18) / template.width, (height - 16) / template.height, 0.95);
+  ctx.translate(width * 0.5, height * 0.5);
+  ctx.scale(scale, scale);
+
+  drawRealisticItem(ctx, {
+    instanceId: 'preview',
+    template,
+    x: 0,
+    y: 0,
+    rotation: 0,
+    scale: 1,
+    flagged: false,
+  });
 
   ctx.restore();
 }

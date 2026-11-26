@@ -1,5 +1,6 @@
 import './style.css';
 import { SoundEngine } from './audio/SoundEngine';
+import { CONTRABAND_ITEMS, LEGAL_ITEMS } from './data/items';
 import {
   AIR_MARSHAL_RANKS,
   AIR_MARSHAL_UNLOCK_LEVEL,
@@ -29,8 +30,13 @@ import {
   getSearchBagRect,
   hitTestSearchBagItem,
   renderBagSearchTable,
+  renderPhysicalItemThumbnail,
 } from './sim/bagSearchRenderer';
-import { hitTestBagItem, renderXRayMonitor } from './sim/xrayRenderer';
+import {
+  hitTestBagItem,
+  renderXRayItemThumbnail,
+  renderXRayMonitor,
+} from './sim/xrayRenderer';
 
 const SAVE_KEY = 'skyguard_checkpoint_save_v1';
 
@@ -101,9 +107,11 @@ class SkyGuardGame {
   private readonly modalDebrief = document.getElementById('modal-debrief')!;
   private readonly modalFlightSelect = document.getElementById('modal-flight-select')!;
   private readonly modalFlightDebrief = document.getElementById('modal-flight-debrief')!;
+  private readonly modalContrabandGuide = document.getElementById('modal-contraband-guide')!;
   private readonly viewport3d = document.getElementById('viewport-3d')!;
   private readonly viewportFlight = document.getElementById('viewport-flight')!;
   private readonly feedbackToast = document.getElementById('feedback-toast')!;
+  private activeGuideTab: 'contraband' | 'legal' = 'contraband';
 
   private readonly canvasId = document.getElementById('canvas-id') as HTMLCanvasElement;
   private readonly canvasBoarding = document.getElementById('canvas-boarding') as HTMLCanvasElement;
@@ -223,7 +231,30 @@ class SkyGuardGame {
       this.openFlightSelector();
     });
 
-    // Top HUD controls
+    // Top HUD controls & Contraband Guide
+    for (const gid of ['btn-contraband-guide', 'btn-guide-briefing']) {
+      document.getElementById(gid)!.addEventListener('click', () => {
+        this.sound.playClick(true);
+        this.openContrabandGuide('contraband');
+      });
+    }
+    document.getElementById('btn-close-guide')!.addEventListener('click', () => {
+      this.sound.playClick();
+      this.modalContrabandGuide.classList.add('hidden');
+    });
+    this.modalContrabandGuide.addEventListener('click', (e) => {
+      if (e.target === this.modalContrabandGuide) {
+        this.modalContrabandGuide.classList.add('hidden');
+      }
+    });
+    document.querySelectorAll<HTMLButtonElement>('[data-guide-tab]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.sound.playClick();
+        const tab = btn.dataset.guideTab as 'contraband' | 'legal';
+        this.openContrabandGuide(tab);
+      });
+    });
+
     document.getElementById('btn-rules')!.addEventListener('click', () => {
       this.sound.playClick();
       this.rulesDrawer.classList.toggle('hidden');
@@ -456,8 +487,22 @@ class SkyGuardGame {
 
     // Keyboard shortcuts for crisp operator flow
     window.addEventListener('keydown', (e) => {
-      if (this.inFlightMode || !this.shiftActive || this.awaitingNextPax) return;
       const key = e.key.toLowerCase();
+      if (key === 'escape' && !this.modalContrabandGuide.classList.contains('hidden')) {
+        this.modalContrabandGuide.classList.add('hidden');
+        return;
+      }
+      if (this.inFlightMode) return;
+      if (key === 'g' && !this.awaitingNextPax) {
+        if (this.modalContrabandGuide.classList.contains('hidden')) {
+          this.openContrabandGuide(this.activeGuideTab);
+        } else {
+          this.modalContrabandGuide.classList.add('hidden');
+        }
+        return;
+      }
+      if (!this.modalContrabandGuide.classList.contains('hidden')) return;
+      if (!this.shiftActive || this.awaitingNextPax) return;
       if (key === '1') this.setStation('overview');
       else if (key === '2') this.setStation('documents');
       else if (key === '3') this.setStation('xray');
@@ -470,6 +515,72 @@ class SkyGuardGame {
       else if (key === 'd') this.submitDecision('DENY_ID');
       else if (key === 'x') this.submitDecision('CONFISCATE_DETAIN');
     });
+  }
+
+  private openContrabandGuide(tab: 'contraband' | 'legal'): void {
+    this.activeGuideTab = tab;
+    document.querySelectorAll<HTMLButtonElement>('[data-guide-tab]').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.guideTab === tab);
+    });
+
+    const grid = document.getElementById('guide-items-grid')!;
+    grid.innerHTML = '';
+
+    const items = tab === 'contraband' ? CONTRABAND_ITEMS : LEGAL_ITEMS;
+    for (const tpl of items) {
+      const card = document.createElement('div');
+      card.className = `guide-card ${tpl.contraband ? 'is-contraband' : 'is-legal'}`;
+
+      const top = document.createElement('div');
+      top.className = 'guide-card-top';
+      top.innerHTML = `
+        <span class="guide-item-name">${tpl.name}</span>
+        <div class="guide-badges">
+          <span class="guide-cat-badge ${tpl.contraband ? 'bad' : 'good'}">
+            ${tpl.contraband ? tpl.category.toUpperCase() : 'ALLOWED'}
+          </span>
+          <span class="guide-lvl-badge">LVL ${tpl.minLevel}+</span>
+        </div>
+      `;
+      card.appendChild(top);
+
+      // Side-by-side live Dual-Energy X-Ray & Physical Bag Search thumbnails
+      const previews = document.createElement('div');
+      previews.className = 'guide-previews';
+
+      const xrayBox = document.createElement('div');
+      xrayBox.className = 'guide-preview-box';
+      xrayBox.innerHTML = '<span class="guide-preview-lbl">X-RAY SIGNATURE</span>';
+      const xrayCanvas = document.createElement('canvas');
+      xrayCanvas.width = 160;
+      xrayCanvas.height = 92;
+      const xCtx = xrayCanvas.getContext('2d');
+      if (xCtx) renderXRayItemThumbnail(xCtx, tpl);
+      xrayBox.appendChild(xrayCanvas);
+
+      const physBox = document.createElement('div');
+      physBox.className = 'guide-preview-box';
+      physBox.innerHTML = '<span class="guide-preview-lbl">INSIDE OPEN BAG</span>';
+      const physCanvas = document.createElement('canvas');
+      physCanvas.width = 160;
+      physCanvas.height = 92;
+      const pCtx = physCanvas.getContext('2d');
+      if (pCtx) renderPhysicalItemThumbnail(pCtx, tpl);
+      physBox.appendChild(physCanvas);
+
+      previews.appendChild(xrayBox);
+      previews.appendChild(physBox);
+      card.appendChild(previews);
+
+      const hint = document.createElement('p');
+      hint.className = 'guide-hint';
+      hint.textContent = tpl.hint;
+      card.appendChild(hint);
+
+      grid.appendChild(card);
+    }
+
+    this.modalContrabandGuide.classList.remove('hidden');
   }
 
   private prepareBriefing(level: number): void {

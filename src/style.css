@@ -1507,6 +1507,215 @@ kbd {
   background: rgba(255, 255, 255, 0.12);
 }
 
+/* ==================== CONTRABAND FIELD GUIDE MODAL ==================== */
+.guide-btn {
+  border-color: rgba(245, 158, 11, 0.5);
+  color: #fde68a;
+}
+
+.guide-panel {
+  width: min(940px, 100%);
+}
+
+.guide-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.xray-color-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.color-key-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 10px;
+  background: #172130;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+.swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.swatch-org {
+  background: #e8841c;
+}
+
+.swatch-mix {
+  background: #2ca25c;
+}
+
+.swatch-mtl {
+  background: #1c44ba;
+}
+
+.swatch-hiz {
+  background: #0e1638;
+  border: 1px solid #475569;
+}
+
+.ck-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.ck-desc {
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.guide-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.guide-tab {
+  flex: 1;
+  padding: 9px 12px;
+  background: #17202d;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+
+.guide-tab.active[data-guide-tab='contraband'] {
+  background: rgba(185, 28, 28, 0.28);
+  border-color: #ef4444;
+  color: #fee2e2;
+}
+
+.guide-tab.active[data-guide-tab='legal'] {
+  background: rgba(21, 128, 61, 0.25);
+  border-color: #22c55e;
+  color: #dcfce7;
+}
+
+.guide-items-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.guide-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #161f2c;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+}
+
+.guide-card.is-contraband {
+  border-left: 3px solid #ef4444;
+}
+
+.guide-card.is-legal {
+  border-left: 3px solid #22c55e;
+}
+
+.guide-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.guide-item-name {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.guide-badges {
+  display: flex;
+  gap: 6px;
+}
+
+.guide-cat-badge {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.guide-cat-badge.bad {
+  background: rgba(220, 38, 38, 0.24);
+  color: #fecaca;
+}
+
+.guide-cat-badge.good {
+  background: rgba(22, 163, 74, 0.24);
+  color: #bbf7d0;
+}
+
+.guide-lvl-badge {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #223042;
+  color: #94a3b8;
+}
+
+.guide-previews {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.guide-preview-box {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.guide-preview-lbl {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.guide-preview-box canvas {
+  width: 100%;
+  height: auto;
+  border-radius: 5px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.guide-hint {
+  font-size: 11.5px;
+  line-height: 1.42;
+  color: #cbd5e1;
+}
+
 @media (max-width: 960px) {
   .hud-bottom {
     flex-direction: column;
@@ -1518,6 +1727,8 @@ kbd {
   }
   .docs-grid,
   .bag-search-layout,
+  .xray-color-strip,
+  .guide-items-grid,
   .upgrade-grid,
   .debrief-stats,
   .briefing-meta-row {

@@ -62,6 +62,9 @@
           <button id="btn-open-flights-hud" class="icon-btn flight-launch-btn" type="button" title="Board Air Marshal Flight Mission (Phase 2)">
             ✈ AIR MARSHAL
           </button>
+          <button id="btn-contraband-guide" class="icon-btn guide-btn" type="button" title="Open Prohibited & Authorized Items Visual Guide (G)">
+            CONTRABAND GUIDE <kbd>G</kbd>
+          </button>
           <button id="btn-rules" class="icon-btn" type="button" title="Toggle Shift Directives & Watchlist">
             DIRECTIVES
           </button>
@@ -291,6 +294,9 @@
             <button id="btn-reset-save" class="secondary-cta hidden" type="button">
               RESET CAREER
             </button>
+            <button id="btn-guide-briefing" class="secondary-cta" type="button">
+              CONTRABAND GUIDE
+            </button>
             <button id="btn-open-flights-briefing" class="flight-cta" type="button">
               ✈ BOARD AIR MARSHAL FLIGHT
             </button>
@@ -469,6 +475,63 @@
               ✈ NEXT FLIGHT MISSION
             </button>
           </div>
+        </div>
+      </div>
+
+      <!-- TSA Prohibited & Authorized Items Field Guide Modal -->
+      <div id="modal-contraband-guide" class="modal-backdrop hidden">
+        <div class="modal-panel guide-panel">
+          <div class="guide-header-row">
+            <div>
+              <div class="modal-kicker">TSA CHECKPOINT FIELD MANUAL • REFERENCE</div>
+              <h2>CONTRABAND &amp; X-RAY IDENTIFICATION GUIDE</h2>
+            </div>
+            <button id="btn-close-guide" class="secondary-cta" type="button">
+              CLOSE <kbd>ESC</kbd>
+            </button>
+          </div>
+
+          <div class="xray-color-strip">
+            <div class="color-key-item">
+              <span class="swatch swatch-org"></span>
+              <div>
+                <div class="ck-title">ORANGE — ORGANIC</div>
+                <div class="ck-desc">Clothes, paper, food, liquids (&gt;100ml banned), plastic explosives</div>
+              </div>
+            </div>
+            <div class="color-key-item">
+              <span class="swatch swatch-mix"></span>
+              <div>
+                <div class="ck-title">GREEN — MIXED / ALLOY</div>
+                <div class="ck-desc">Electronics, laptops, lenses, batteries, timer PCBs</div>
+              </div>
+            </div>
+            <div class="color-key-item">
+              <span class="swatch swatch-mtl"></span>
+              <div>
+                <div class="ck-title">BLUE — DENSE METAL</div>
+                <div class="ck-desc">Firearms, combat blades, brass knuckles, pressurized canisters</div>
+              </div>
+            </div>
+            <div class="color-key-item">
+              <span class="swatch swatch-hiz"></span>
+              <div>
+                <div class="ck-title">DARK INDIGO — HI-Z / LEAD</div>
+                <div class="ck-desc">Gun barrels, grenade cores, false bottoms (open bag [4] or use MS)</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="guide-tabs">
+            <button class="guide-tab active" data-guide-tab="contraband" type="button">
+              PROHIBITED CONTRABAND (CONFISCATE &amp; DETAIN)
+            </button>
+            <button class="guide-tab" data-guide-tab="legal" type="button">
+              AUTHORIZED CARRY-ON (SAFE — DO NOT SEIZE)
+            </button>
+          </div>
+
+          <div id="guide-items-grid" class="guide-items-grid"></div>
         </div>
       </div>
     </div>

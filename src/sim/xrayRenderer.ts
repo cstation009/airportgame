@@ -1,6 +1,7 @@
 import type {
   BagData,
   BagItemInstance,
+  ItemTemplate,
   XRayLayerShape,
   XRayMaterial,
   XRayMode,
@@ -450,6 +451,32 @@ export function renderXRayMonitor(
       ctx.fillText(item.text, lx + 14, height - 7);
       lx += 48;
     }
+  }
+
+  ctx.restore();
+}
+
+export function renderXRayItemThumbnail(
+  ctx: CanvasRenderingContext2D,
+  template: ItemTemplate,
+): void {
+  const { width, height } = ctx.canvas;
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = '#f4f6f0';
+  ctx.fillRect(0, 0, width, height);
+
+  const scale = Math.min((width - 18) / template.width, (height - 16) / template.height, 0.95);
+  ctx.translate(width * 0.5, height * 0.5);
+  ctx.scale(scale, scale);
+  ctx.globalCompositeOperation = 'multiply';
+
+  for (const shape of template.shapes) {
+    const col = getAttenuationColor(shape.material, shape.density, 'STD');
+    const rgba = `rgba(${col.r}, ${col.g}, ${col.b}, ${col.alpha})`;
+    ctx.fillStyle = rgba;
+    ctx.strokeStyle = rgba;
+    drawShape(ctx, shape);
   }
 
   ctx.restore();
