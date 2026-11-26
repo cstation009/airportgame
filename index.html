@@ -20,6 +20,9 @@
       <!-- Full-bleed 3D WebGL Airport Terminal Canvas -->
       <div id="viewport-3d" aria-label="3D Airport Security Checkpoint"></div>
 
+      <!-- Full-bleed 3D WebGL In-Flight Air Marshal Cabin Canvas (Phase 2) -->
+      <div id="viewport-flight" class="hidden" aria-label="3D Airplane Cabin Mission"></div>
+
       <!-- Top Aviation Security Telemetry Bar -->
       <header id="hud-top" class="hud-top hidden">
         <div class="hud-brand">
@@ -46,7 +49,7 @@
               <div class="progress-fill" id="hud-xp-bar" style="width: 0%"></div>
             </div>
             <div class="marshal-goal" id="hud-marshal-goal">
-              AIR MARSHAL FLIGHT DUTY UNLOCKS AT LVL 5
+              AIR MARSHAL FLIGHT DUTY READY • UNLOCK HIGHER FLIGHTS AT LVL 3 &amp; 5
             </div>
           </div>
         </div>
@@ -56,6 +59,9 @@
             <span class="credits-lbl">CREDITS</span>
             <span class="credits-val mono" id="hud-credits">$0</span>
           </div>
+          <button id="btn-open-flights-hud" class="icon-btn flight-launch-btn" type="button" title="Board Air Marshal Flight Mission (Phase 2)">
+            ✈ AIR MARSHAL
+          </button>
           <button id="btn-rules" class="icon-btn" type="button" title="Toggle Shift Directives & Watchlist">
             DIRECTIVES
           </button>
@@ -232,11 +238,14 @@
           </div>
 
           <div class="modal-actions">
-            <button id="btn-start-shift" class="primary-cta" type="button">
-              OPEN SECURITY LANE
-            </button>
             <button id="btn-reset-save" class="secondary-cta hidden" type="button">
               RESET CAREER
+            </button>
+            <button id="btn-open-flights-briefing" class="flight-cta" type="button">
+              ✈ BOARD AIR MARSHAL FLIGHT
+            </button>
+            <button id="btn-start-shift" class="primary-cta" type="button">
+              OPEN SECURITY LANE
             </button>
           </div>
         </div>
@@ -271,23 +280,143 @@
             <div class="am-left">
               <div class="am-badge">FAM</div>
               <div>
-                <div class="am-title" id="am-banner-title">AIR MARSHAL QUALIFICATION TRACK</div>
+                <div class="am-title" id="am-banner-title">AIR MARSHAL FLIGHT DISPATCH</div>
                 <div class="am-desc" id="am-banner-desc">
-                  Reach Level 5 to unlock in-flight Air Marshal hijacker interdiction missions (Phase 2).
+                  Board commercial flights to spot disguised hijackers, take cover behind seats, and stop cockpit breaches!
                 </div>
               </div>
             </div>
-            <div class="am-status mono" id="am-banner-status">LVL 1 / 5</div>
+            <button id="btn-open-flights-debrief" class="flight-cta" type="button">
+              ✈ BOARD FLIGHT
+            </button>
           </div>
 
           <div class="shop-section">
-            <div class="box-label">CHECKPOINT HARDWARE UPGRADES</div>
+            <div class="box-label">CHECKPOINT &amp; AIR MARSHAL GEAR UPGRADES</div>
             <div id="upgrade-grid" class="upgrade-grid"></div>
           </div>
 
           <div class="modal-actions">
             <button id="btn-next-shift" class="primary-cta" type="button">
               PROCEED TO NEXT SHIFT
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== PHASE 2: AIR MARSHAL IN-FLIGHT HUD ==================== -->
+      <div id="flight-hud" class="flight-hud hidden">
+        <header class="flight-top-bar">
+          <div class="flight-top-left">
+            <span class="badge-plate">AIR MARSHAL</span>
+            <div>
+              <div class="brand-title" id="flight-hud-id">PA 204 • SEA ✈ JFK • BOEING 777-300ER</div>
+              <div class="brand-sub">
+                HOSTILES: <strong id="flight-hud-hostiles">0 / 2 SUBDUED</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="flight-meters">
+            <div class="meter-group">
+              <div class="marshal-label">
+                <span>COCKPIT DOOR INTEGRITY</span>
+                <span class="mono" id="flight-cockpit-pct">100%</span>
+              </div>
+              <div class="progress-track">
+                <div class="progress-fill cockpit-fill" id="flight-cockpit-bar" style="width: 100%"></div>
+              </div>
+            </div>
+            <div class="meter-group">
+              <div class="marshal-label">
+                <span>MARSHAL VEST ARMOR</span>
+                <span class="mono" id="flight-vest-pct">100%</span>
+              </div>
+              <div class="progress-track">
+                <div class="progress-fill vest-fill" id="flight-vest-bar" style="width: 100%"></div>
+              </div>
+            </div>
+          </div>
+
+          <button id="btn-abort-flight" class="icon-btn" type="button">
+            EXIT FLIGHT
+          </button>
+        </header>
+
+        <aside id="flight-intel-toast" class="flight-intel-toast hidden" role="status">
+          <div class="intel-title" id="flight-intel-title">CABIN INTEL</div>
+          <p id="flight-intel-body"></p>
+        </aside>
+
+        <footer class="flight-bottom-bar">
+          <div class="flight-controls-guide mono">
+            <span><kbd>WASD</kbd> Move Aisle</span>
+            <span><kbd>SHIFT</kbd> Crouch Cover</span>
+            <span><kbd>E</kbd> / <kbd>RMB</kbd> Scan Passenger</span>
+            <span><kbd>LMB</kbd> Fire Taser</span>
+            <span><kbd>R</kbd> Reload</span>
+          </div>
+          <div class="flight-tactical-status">
+            <span id="flight-cover-pill" class="cover-pill">EXPOSED (HOLD SHIFT NEAR SEATS)</span>
+            <button id="btn-flight-scan" class="hw-btn" type="button">SCAN <kbd>E</kbd></button>
+            <button id="btn-flight-reload" class="hw-btn" type="button">
+              <span id="flight-taser-status">2 / 2 CARTRIDGES</span>
+            </button>
+          </div>
+        </footer>
+      </div>
+
+      <!-- Air Marshal Flight Mission Selector Modal -->
+      <div id="modal-flight-select" class="modal-backdrop hidden">
+        <div class="modal-panel flight-select-panel">
+          <div class="modal-kicker">PHASE 2 • FEDERAL AIR MARSHAL SERVICE</div>
+          <h2>IN-FLIGHT HIJACKER INTERDICTION</h2>
+          <p class="modal-lead">
+            Move up the 3D cabin aisle, observe nervous tells, scan passengers (<kbd>E</kbd> / Right-Click) to unmask disguised hijackers, crouch behind seats &amp; galley carts (<kbd>Shift</kbd>) for cover, and subdue threats with your Taser (<kbd>Left-Click</kbd>) before they breach the flight deck.
+          </p>
+
+          <div id="flight-mission-list" class="flight-mission-list"></div>
+
+          <div class="modal-actions">
+            <button id="btn-close-flight-select" class="secondary-cta" type="button">
+              BACK TO TERMINAL
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Air Marshal Flight Mission Debrief Modal -->
+      <div id="modal-flight-debrief" class="modal-backdrop hidden">
+        <div class="modal-panel debrief-panel">
+          <div class="modal-kicker" id="flight-debrief-kicker">FEDERAL AIR MARSHAL AFTER-ACTION REPORT</div>
+          <h2 id="flight-debrief-title">FLIGHT SECURED</h2>
+          <p class="modal-lead" id="flight-debrief-reason"></p>
+
+          <div class="debrief-stats">
+            <div class="stat-box">
+              <span class="stat-lbl">HIJACKERS SUBDUED</span>
+              <span class="stat-val mono" id="fstat-subdued">2 / 2</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-lbl">COCKPIT DOOR</span>
+              <span class="stat-val mono" id="fstat-cockpit">100%</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-lbl">XP EARNED</span>
+              <span class="stat-val mono" id="fstat-xp">+320</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-lbl">CREDITS EARNED</span>
+              <span class="stat-val mono accent" id="fstat-credits">+$225</span>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button id="btn-flight-return" class="secondary-cta" type="button">
+              RETURN TO CHECKPOINT
+            </button>
+            <button id="btn-flight-again" class="flight-cta" type="button">
+              ✈ NEXT FLIGHT MISSION
             </button>
           </div>
         </div>

@@ -39,6 +39,20 @@ export const UPGRADES: UpgradeDefinition[] = [
     badge: 'INTEL',
     description: 'Automatically pulses the BOLO desk monitor whenever a passenger surname hits the watchlist.',
   },
+  {
+    id: 'dualTaser',
+    name: 'Taser X2 Dual-Cartridge',
+    cost: 220,
+    badge: 'FLIGHT',
+    description: 'Doubles Air Marshal Taser capacity (2 → 4 cartridges) and speeds up reloads in-flight.',
+  },
+  {
+    id: 'kevlarVest',
+    name: 'Concealed Kevlar Vest',
+    cost: 260,
+    badge: 'FLIGHT',
+    description: 'Boosts Air Marshal tactical vest armor (+50%) and accelerates cover recovery during cabin firefights.',
+  },
 ];
 
 export function getShiftConfig(level: number): ShiftConfig {

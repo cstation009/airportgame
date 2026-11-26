@@ -7,6 +7,9 @@ import {
   getRankForXp,
   getShiftConfig,
 } from './data/levels';
+import { FlightController } from './flight/FlightController';
+import { FLIGHT_MISSIONS } from './flight/flightLogic';
+import type { FlightMissionConfig, FlightMissionResult } from './flight/flightTypes';
 import { CheckpointScene } from './scene/CheckpointScene';
 import { evaluateDecision } from './sim/evaluator';
 import { generatePassengerCase, generateWatchlist } from './sim/generator';
@@ -42,6 +45,8 @@ function createInitialProgress(): PlayerProgress {
       highSpeedBelt: false,
       wideUvLamp: false,
       watchlistAlert: false,
+      dualTaser: false,
+      kevlarVest: false,
     },
     airMarshalUnlocked: false,
   };
@@ -88,6 +93,10 @@ class SkyGuardGame {
   private readonly stationXRay = document.getElementById('station-xray')!;
   private readonly modalBriefing = document.getElementById('modal-briefing')!;
   private readonly modalDebrief = document.getElementById('modal-debrief')!;
+  private readonly modalFlightSelect = document.getElementById('modal-flight-select')!;
+  private readonly modalFlightDebrief = document.getElementById('modal-flight-debrief')!;
+  private readonly viewport3d = document.getElementById('viewport-3d')!;
+  private readonly viewportFlight = document.getElementById('viewport-flight')!;
   private readonly feedbackToast = document.getElementById('feedback-toast')!;
 
   private readonly canvasId = document.getElementById('canvas-id') as HTMLCanvasElement;
@@ -106,6 +115,10 @@ class SkyGuardGame {
   private currentPax: PassengerCase | null = null;
   private shiftActive = false;
   private awaitingNextPax = false;
+
+  // Phase 2: Air Marshal Flight state
+  private flightController: FlightController | null = null;
+  private inFlightMode = false;
 
   // Shift-scoped telemetry for debrief
   private shiftCorrect = 0;
@@ -127,8 +140,7 @@ class SkyGuardGame {
   private toastTimeout: number | null = null;
 
   constructor() {
-    const viewport = document.getElementById('viewport-3d')!;
-    this.scene = new CheckpointScene(viewport, this.canvasXRay);
+    this.scene = new CheckpointScene(this.viewport3d, this.canvasXRay);
 
     this.bindUIEvents();
     this.prepareBriefing(this.progress.level);
@@ -152,6 +164,49 @@ class SkyGuardGame {
       this.sound.playClick(true);
       this.modalDebrief.classList.add('hidden');
       this.prepareBriefing(this.progress.level);
+    });
+
+    // Phase 2: Air Marshal Flight launch buttons
+    for (const btnId of [
+      'btn-open-flights-briefing',
+      'btn-open-flights-hud',
+      'btn-open-flights-debrief',
+    ]) {
+      document.getElementById(btnId)!.addEventListener('click', () => {
+        this.sound.playClick(true);
+        this.openFlightSelector();
+      });
+    }
+
+    document.getElementById('btn-close-flight-select')!.addEventListener('click', () => {
+      this.sound.playClick();
+      this.modalFlightSelect.classList.add('hidden');
+    });
+
+    document.getElementById('btn-abort-flight')!.addEventListener('click', () => {
+      this.sound.playClick();
+      this.exitFlightMode();
+    });
+
+    document.getElementById('btn-flight-scan')!.addEventListener('click', () => {
+      this.flightController?.triggerScanFromButton();
+    });
+
+    document.getElementById('btn-flight-reload')!.addEventListener('click', () => {
+      this.flightController?.triggerReloadFromButton();
+    });
+
+    document.getElementById('btn-flight-return')!.addEventListener('click', () => {
+      this.sound.playClick();
+      this.modalFlightDebrief.classList.add('hidden');
+      this.exitFlightMode();
+    });
+
+    document.getElementById('btn-flight-again')!.addEventListener('click', () => {
+      this.sound.playClick(true);
+      this.modalFlightDebrief.classList.add('hidden');
+      this.exitFlightMode(true);
+      this.openFlightSelector();
     });
 
     // Top HUD controls
@@ -258,7 +313,7 @@ class SkyGuardGame {
 
     // Keyboard shortcuts for crisp operator flow
     window.addEventListener('keydown', (e) => {
-      if (!this.shiftActive || this.awaitingNextPax) return;
+      if (this.inFlightMode || !this.shiftActive || this.awaitingNextPax) return;
       const key = e.key.toLowerCase();
       if (key === '1') this.setStation('overview');
       else if (key === '2') this.setStation('documents');
@@ -624,15 +679,12 @@ class SkyGuardGame {
 
     const amBanner = document.getElementById('air-marshal-banner')!;
     amBanner.classList.toggle('unlocked', this.progress.airMarshalUnlocked);
-    document.getElementById('am-banner-status')!.textContent = this.progress.airMarshalUnlocked
-      ? 'CLEARED ✓'
-      : `LVL ${rank.level} / ${AIR_MARSHAL_UNLOCK_LEVEL}`;
     document.getElementById('am-banner-title')!.textContent = this.progress.airMarshalUnlocked
-      ? 'FEDERAL AIR MARSHAL BADGE UNLOCKED'
-      : 'AIR MARSHAL QUALIFICATION TRACK';
+      ? 'FEDERAL AIR MARSHAL — ALL FLIGHTS UNLOCKED'
+      : `AIR MARSHAL FLIGHT DISPATCH (CLEARANCE LVL ${Math.max(rank.level, this.progress.level)})`;
     document.getElementById('am-banner-desc')!.textContent = this.progress.airMarshalUnlocked
-      ? 'You have earned Federal Air Marshal clearance! Phase 2 will deploy you aboard live flights to stop hijackers in top-down cabin action.'
-      : `Earn Level ${AIR_MARSHAL_UNLOCK_LEVEL} clearance to board flights and stop mid-air hijackers in Phase 2.`;
+      ? 'Deploy aboard Domestic, Transatlantic, or High-Threat Red-Eye flights to neutralize hijackers mid-air.'
+      : 'Board PA 204 Patrol now, or reach Level 3 & Level 5 to unlock Transatlantic and High-Alert flights!';
 
     this.renderUpgradeShop();
 
@@ -642,6 +694,129 @@ class SkyGuardGame {
     this.stationXRay.classList.add('hidden');
     this.rulesDrawer.classList.add('hidden');
     this.modalDebrief.classList.remove('hidden');
+  }
+
+  private openFlightSelector(): void {
+    const rank = getRankForXp(this.progress.xp);
+    const effectiveLevel = Math.max(rank.level, this.progress.level);
+    const list = document.getElementById('flight-mission-list')!;
+    list.innerHTML = '';
+
+    for (const mission of FLIGHT_MISSIONS) {
+      const unlocked = effectiveLevel >= mission.minCareerLevel;
+      const card = document.createElement('div');
+      card.className = `flight-mission-card${unlocked ? '' : ' locked'}`;
+      card.innerHTML = `
+        <div>
+          <div class="fm-head">
+            <span class="fm-flight">${mission.flightNumber} — ${mission.threatTitle}</span>
+            <span class="fm-route">${mission.route}</span>
+          </div>
+          <div class="fm-meta">
+            ${mission.aircraft} • ${mission.hijackerCount} Disguised Hijackers • Reward: +${mission.rewardXp} XP / +$${mission.rewardCredits}
+          </div>
+        </div>
+      `;
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = unlocked ? 'flight-cta' : 'secondary-cta';
+      btn.textContent = unlocked
+        ? '✈ BOARD FLIGHT'
+        : `LOCKED (LVL ${mission.minCareerLevel})`;
+      btn.disabled = !unlocked;
+      btn.addEventListener('click', () => this.launchFlightMission(mission));
+
+      card.appendChild(btn);
+      list.appendChild(card);
+    }
+
+    this.modalFlightSelect.classList.remove('hidden');
+  }
+
+  private launchFlightMission(mission: FlightMissionConfig): void {
+    this.sound.playTerminalChime();
+    this.sound.setBeltRunning(false);
+
+    // Pause checkpoint UI & 3D rendering cleanly
+    this.inFlightMode = true;
+    this.modalFlightSelect.classList.add('hidden');
+    this.modalBriefing.classList.add('hidden');
+    this.modalDebrief.classList.add('hidden');
+    this.modalFlightDebrief.classList.add('hidden');
+    this.hudTop.classList.add('hidden');
+    this.hudBottom.classList.add('hidden');
+    this.paxDialogue.classList.add('hidden');
+    this.stationDocs.classList.add('hidden');
+    this.stationXRay.classList.add('hidden');
+    this.rulesDrawer.classList.add('hidden');
+    this.feedbackToast.classList.add('hidden');
+    this.viewport3d.classList.add('hidden');
+
+    this.viewportFlight.innerHTML = '';
+    this.viewportFlight.classList.remove('hidden');
+
+    if (this.flightController) {
+      this.flightController.destroy();
+      this.flightController = null;
+    }
+
+    this.flightController = new FlightController(
+      this.viewportFlight,
+      mission,
+      this.progress,
+      this.sound,
+      (result) => this.handleFlightComplete(result),
+    );
+  }
+
+  private handleFlightComplete(result: FlightMissionResult): void {
+    // Award career XP & credits from Air Marshal flight!
+    this.progress.xp += result.xpEarned;
+    this.progress.credits += result.creditsEarned;
+    const rank = getRankForXp(this.progress.xp);
+    if (rank.level >= AIR_MARSHAL_UNLOCK_LEVEL) {
+      this.progress.airMarshalUnlocked = true;
+    }
+    saveProgress(this.progress);
+
+    document.getElementById('flight-debrief-kicker')!.textContent = result.victory
+      ? `FLIGHT ${result.mission.flightNumber} SECURED • COMMENDATION`
+      : `FLIGHT ${result.mission.flightNumber} • INCIDENT REPORT`;
+    document.getElementById('flight-debrief-title')!.textContent = result.victory
+      ? 'HIJACKING THWARTED'
+      : 'MISSION FAILED';
+    document.getElementById('flight-debrief-reason')!.textContent = result.reason;
+    document.getElementById('fstat-subdued')!.textContent =
+      `${result.hijackersSubdued} / ${result.hijackersTotal}`;
+    document.getElementById('fstat-cockpit')!.textContent = `${result.cockpitIntegrity}%`;
+    document.getElementById('fstat-xp')!.textContent = `+${result.xpEarned}`;
+    document.getElementById('fstat-credits')!.textContent = `+$${result.creditsEarned}`;
+
+    this.modalFlightDebrief.classList.remove('hidden');
+  }
+
+  private exitFlightMode(stayInMenu = false): void {
+    if (this.flightController) {
+      this.flightController.destroy();
+      this.flightController = null;
+    }
+    this.inFlightMode = false;
+    this.viewportFlight.classList.add('hidden');
+    this.viewportFlight.innerHTML = '';
+    this.viewport3d.classList.remove('hidden');
+    this.modalFlightDebrief.classList.add('hidden');
+
+    if (stayInMenu) return;
+
+    if (this.shiftActive && this.currentPax) {
+      this.hudTop.classList.remove('hidden');
+      this.hudBottom.classList.remove('hidden');
+      this.paxDialogue.classList.remove('hidden');
+      this.updateHud();
+    } else {
+      this.prepareBriefing(this.progress.level);
+    }
   }
 
   private renderUpgradeShop(): void {
@@ -690,6 +865,13 @@ class SkyGuardGame {
   private loop = (ts: number): void => {
     const dt = Math.min(0.05, (ts - this.lastFrameTs) / 1000);
     this.lastFrameTs = ts;
+
+    // Pause checkpoint WebGL rendering cleanly while running a Phase 2 3D flight mission
+    if (this.inFlightMode) {
+      requestAnimationFrame(this.loop);
+      return;
+    }
+
     this.scanTime += dt;
 
     // Conveyor belt motion physics

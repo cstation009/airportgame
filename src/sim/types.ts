@@ -177,7 +177,13 @@ export interface DecisionEvaluation {
   falseFlagCount: number;
 }
 
-export type UpgradeId = 'densityProbe' | 'highSpeedBelt' | 'wideUvLamp' | 'watchlistAlert';
+export type UpgradeId =
+  | 'densityProbe'
+  | 'highSpeedBelt'
+  | 'wideUvLamp'
+  | 'watchlistAlert'
+  | 'dualTaser'
+  | 'kevlarVest';
 
 export interface UpgradeDefinition {
   id: UpgradeId;

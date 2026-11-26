@@ -178,4 +178,50 @@ export class SoundEngine {
     gain.connect(this.ctx.destination);
     src.start();
   }
+
+  public playTaserFire(): void {
+    this.unlock();
+    if (this.muted || !this.ctx) return;
+    // Crackling high-voltage taser arc burst
+    this.playTone(1480, 0.09, 'sawtooth', 0.08, 0);
+    this.playTone(1920, 0.07, 'square', 0.06, 0.03);
+    this.playTone(1120, 0.11, 'sawtooth', 0.07, 0.06);
+  }
+
+  public playHostileShot(): void {
+    this.unlock();
+    if (this.muted || !this.ctx) return;
+    this.playTone(165, 0.12, 'sawtooth', 0.09, 0);
+    this.playTone(92, 0.16, 'square', 0.07, 0.03);
+  }
+
+  public playScanPing(hostile: boolean): void {
+    this.unlock();
+    if (hostile) {
+      this.playTone(740, 0.12, 'sawtooth', 0.08, 0);
+      this.playTone(980, 0.16, 'sawtooth', 0.09, 0.09);
+    } else {
+      this.playTone(880, 0.09, 'sine', 0.06, 0);
+      this.playTone(1174, 0.11, 'sine', 0.06, 0.07);
+    }
+  }
+
+  public playHijackerAlert(): void {
+    this.unlock();
+    this.playTone(620, 0.15, 'sawtooth', 0.09, 0);
+    this.playTone(460, 0.18, 'sawtooth', 0.09, 0.14);
+    this.playTone(620, 0.22, 'sawtooth', 0.09, 0.3);
+  }
+
+  public playCuffLock(): void {
+    this.unlock();
+    this.playTone(1240, 0.05, 'triangle', 0.08, 0);
+    this.playTone(1680, 0.08, 'triangle', 0.08, 0.055);
+  }
+
+  public playCockpitAlarm(): void {
+    this.unlock();
+    this.playTone(880, 0.12, 'square', 0.07, 0);
+    this.playTone(660, 0.12, 'square', 0.07, 0.13);
+  }
 }
