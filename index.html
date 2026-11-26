@@ -155,8 +155,53 @@
               <button class="hw-btn" data-xray-mode="INV" type="button" title="Inverted High-Detail B&W">
                 INV (B&amp;W)
               </button>
+              <button id="btn-xray-open-bag" class="hw-btn bag-open-btn" type="button" title="Pull bag onto search table and open it">
+                OPEN BAG <kbd>4</kbd>
+              </button>
             </div>
           </div>
+        </div>
+      </section>
+
+      <!-- Station 4: Physical Manual Bag Inspection Table -->
+      <section id="station-bag-search" class="station-tray bag-search-tray hidden" aria-label="Secondary Bag Inspection Table">
+        <div class="tray-header">
+          <div class="tray-title-group">
+            <span class="tray-title">SECONDARY MANUAL BAG INSPECTION</span>
+            <span class="tray-hint">Drag garments &amp; gear aside to reveal hidden contraband • Click any item to inspect &amp; seize</span>
+          </div>
+          <div class="tray-tools">
+            <span class="mono bag-seized-pill" id="bag-seized-summary">0 SEIZED</span>
+          </div>
+        </div>
+
+        <div class="bag-search-layout">
+          <div class="bag-canvas-wrap">
+            <canvas id="canvas-bag-search" width="560" height="330"></canvas>
+          </div>
+
+          <aside class="item-inspector-panel">
+            <div class="inspector-kicker">SELECTED ITEM ANALYSIS</div>
+            <div id="inspector-empty" class="inspector-empty">
+              Click any item inside the open suitcase to examine it up close, or drag bulky items out of the way to search underneath.
+            </div>
+            <div id="inspector-card" class="inspector-card hidden">
+              <div class="inspector-name" id="inspector-item-name">Laptop Computer</div>
+              <div class="inspector-status" id="inspector-item-status">AUTHORIZED CARRY-ON</div>
+              <p class="inspector-detail" id="inspector-item-detail"></p>
+              <button id="btn-seize-item" class="decision-btn btn-detain inspector-seize-btn" type="button">
+                <span class="btn-main">SEIZE INTO EVIDENCE TRAY</span>
+                <span class="btn-sub">Physically confiscate this item</span>
+              </button>
+            </div>
+
+            <div class="evidence-tray-box">
+              <div class="inspector-kicker">EVIDENCE SEIZURE TRAY</div>
+              <ul id="evidence-list" class="evidence-list">
+                <li class="evidence-empty">No items confiscated yet.</li>
+              </ul>
+            </div>
+          </aside>
         </div>
       </section>
 
@@ -175,6 +220,11 @@
             <span class="station-key">3</span>
             <span>X-RAY SCANNER</span>
             <span class="flag-dot hidden" id="nav-flag-count">0</span>
+          </button>
+          <button class="station-btn" data-station="bagSearch" type="button">
+            <span class="station-key">4</span>
+            <span>INSPECT BAG</span>
+            <span class="flag-dot hidden" id="nav-seized-count">0</span>
           </button>
         </nav>
 

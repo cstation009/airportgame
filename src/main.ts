@@ -25,6 +25,11 @@ import type {
   WatchlistEntry,
   XRayMode,
 } from './sim/types';
+import {
+  getSearchBagRect,
+  hitTestSearchBagItem,
+  renderBagSearchTable,
+} from './sim/bagSearchRenderer';
 import { hitTestBagItem, renderXRayMonitor } from './sim/xrayRenderer';
 
 const SAVE_KEY = 'skyguard_checkpoint_save_v1';
@@ -91,6 +96,7 @@ class SkyGuardGame {
   private readonly rulesDrawer = document.getElementById('rules-drawer')!;
   private readonly stationDocs = document.getElementById('station-documents')!;
   private readonly stationXRay = document.getElementById('station-xray')!;
+  private readonly stationBagSearch = document.getElementById('station-bag-search')!;
   private readonly modalBriefing = document.getElementById('modal-briefing')!;
   private readonly modalDebrief = document.getElementById('modal-debrief')!;
   private readonly modalFlightSelect = document.getElementById('modal-flight-select')!;
@@ -102,10 +108,12 @@ class SkyGuardGame {
   private readonly canvasId = document.getElementById('canvas-id') as HTMLCanvasElement;
   private readonly canvasBoarding = document.getElementById('canvas-boarding') as HTMLCanvasElement;
   private readonly canvasXRay = document.getElementById('canvas-xray') as HTMLCanvasElement;
+  private readonly canvasBagSearch = document.getElementById('canvas-bag-search') as HTMLCanvasElement;
 
   private readonly idCtx = this.canvasId.getContext('2d')!;
   private readonly boardingCtx = this.canvasBoarding.getContext('2d')!;
   private readonly xrayCtx = this.canvasXRay.getContext('2d')!;
+  private readonly bagSearchCtx = this.canvasBagSearch.getContext('2d')!;
 
   // Active shift state
   private shiftConfig: ShiftConfig = getShiftConfig(this.progress.level);
@@ -131,6 +139,12 @@ class SkyGuardGame {
   private bagOffsetX = 280; // Starts right of scan tunnel and glides in
   private xrayCursor: { x: number; y: number } | null = null;
   private hoveredItemId: string | null = null;
+
+  // Station 4: Physical Bag Inspection drag & selection state
+  private selectedBagItemId: string | null = null;
+  private hoveredBagItemId: string | null = null;
+  private draggingBagItemId: string | null = null;
+  private dragOffsetBag = { x: 0, y: 0 };
 
   private uvActive = false;
   private uvCursor: { x: number; y: number } | null = null;
@@ -306,6 +320,135 @@ class SkyGuardGame {
       }
     });
 
+    // Quick jump from X-Ray monitor to physical Bag Inspection Table
+    document.getElementById('btn-xray-open-bag')!.addEventListener('click', () => {
+      this.setStation('bagSearch');
+    });
+
+    // Station 4: Interactive physical bag rummaging & item inspection
+    const getBagCanvasCoords = (e: PointerEvent) => {
+      const rect = this.canvasBagSearch.getBoundingClientRect();
+      return {
+        px: ((e.clientX - rect.left) / rect.width) * this.canvasBagSearch.width,
+        py: ((e.clientY - rect.top) / rect.height) * this.canvasBagSearch.height,
+      };
+    };
+
+    this.canvasBagSearch.addEventListener('pointerdown', (e) => {
+      if (!this.currentPax || this.awaitingNextPax) return;
+      const bag = this.currentPax.bag;
+      const { px, py } = getBagCanvasCoords(e);
+
+      // Peel back dense lead-lined false bottom if present
+      if (bag.hasLeadLining && !bag.falseBottomOpened) {
+        bag.falseBottomOpened = true;
+        this.sound.playPaperSlide();
+        this.redrawBagSearch();
+        return;
+      }
+
+      const hit = hitTestSearchBagItem(
+        this.canvasBagSearch.width,
+        this.canvasBagSearch.height,
+        bag,
+        px,
+        py,
+      );
+      if (hit) {
+        // Bring grabbed item to top of stack so player can drag clothes/laptops cleanly aside
+        const idx = bag.items.indexOf(hit);
+        if (idx >= 0 && idx < bag.items.length - 1) {
+          bag.items.splice(idx, 1);
+          bag.items.push(hit);
+        }
+        hit.inspected = true;
+        this.selectedBagItemId = hit.instanceId;
+        this.draggingBagItemId = hit.instanceId;
+        this.canvasBagSearch.classList.add('dragging');
+        this.canvasBagSearch.setPointerCapture(e.pointerId);
+
+        const { ox, oy, scale } = getSearchBagRect(
+          this.canvasBagSearch.width,
+          this.canvasBagSearch.height,
+          bag,
+        );
+        this.dragOffsetBag = {
+          x: (px - ox) / scale - hit.x,
+          y: (py - oy) / scale - hit.y,
+        };
+        this.sound.playBagItemGrab();
+        this.updateBagInspectorPanel();
+        this.redrawBagSearch();
+      } else {
+        this.selectedBagItemId = null;
+        this.updateBagInspectorPanel();
+        this.redrawBagSearch();
+      }
+    });
+
+    this.canvasBagSearch.addEventListener('pointermove', (e) => {
+      if (!this.currentPax) return;
+      const bag = this.currentPax.bag;
+      const { px, py } = getBagCanvasCoords(e);
+
+      if (this.draggingBagItemId) {
+        const dragged = bag.items.find((i) => i.instanceId === this.draggingBagItemId);
+        if (dragged) {
+          const { ox, oy, scale } = getSearchBagRect(
+            this.canvasBagSearch.width,
+            this.canvasBagSearch.height,
+            bag,
+          );
+          dragged.x = Math.max(18, Math.min(bag.width - 18, (px - ox) / scale - this.dragOffsetBag.x));
+          dragged.y = Math.max(18, Math.min(bag.height - 18, (py - oy) / scale - this.dragOffsetBag.y));
+          this.redrawBagSearch();
+        }
+        return;
+      }
+
+      const hit = hitTestSearchBagItem(
+        this.canvasBagSearch.width,
+        this.canvasBagSearch.height,
+        bag,
+        px,
+        py,
+      );
+      const nextHover = hit?.instanceId ?? null;
+      if (nextHover !== this.hoveredBagItemId) {
+        this.hoveredBagItemId = nextHover;
+        this.redrawBagSearch();
+      }
+    });
+
+    const stopBagDrag = () => {
+      if (this.draggingBagItemId) {
+        this.draggingBagItemId = null;
+        this.canvasBagSearch.classList.remove('dragging');
+        this.redrawBagSearch();
+      }
+    };
+    this.canvasBagSearch.addEventListener('pointerup', stopBagDrag);
+    this.canvasBagSearch.addEventListener('pointercancel', stopBagDrag);
+    this.canvasBagSearch.addEventListener('pointerleave', () => {
+      if (!this.draggingBagItemId) {
+        this.hoveredBagItemId = null;
+        this.redrawBagSearch();
+      }
+    });
+
+    document.getElementById('btn-seize-item')!.addEventListener('click', () => {
+      if (!this.currentPax || !this.selectedBagItemId) return;
+      const item = this.currentPax.bag.items.find((i) => i.instanceId === this.selectedBagItemId);
+      if (!item || item.seized) return;
+      item.seized = true;
+      item.flagged = true;
+      this.selectedBagItemId = null;
+      this.sound.playFlagItem(true);
+      this.updateFlaggedBadges();
+      this.updateBagInspectorPanel();
+      this.redrawBagSearch();
+    });
+
     // Decision action buttons
     document.getElementById('btn-clear')!.addEventListener('click', () => this.submitDecision('CLEAR'));
     document.getElementById('btn-deny')!.addEventListener('click', () => this.submitDecision('DENY_ID'));
@@ -318,6 +461,7 @@ class SkyGuardGame {
       if (key === '1') this.setStation('overview');
       else if (key === '2') this.setStation('documents');
       else if (key === '3') this.setStation('xray');
+      else if (key === '4') this.setStation('bagSearch');
       else if (key === 'u') this.toggleUv();
       else if (key === 'a') this.setBeltState('REV');
       else if (key === 's') this.setBeltState('STOP');
@@ -396,6 +540,7 @@ class SkyGuardGame {
     this.paxDialogue.classList.add('hidden');
     this.stationDocs.classList.add('hidden');
     this.stationXRay.classList.add('hidden');
+    this.stationBagSearch.classList.add('hidden');
   }
 
   private startShift(): void {
@@ -436,10 +581,17 @@ class SkyGuardGame {
     this.setBeltState('FWD', true);
     this.setXRayMode('STD', true);
 
+    // Reset physical bag inspection selection
+    this.selectedBagItemId = null;
+    this.hoveredBagItemId = null;
+    this.draggingBagItemId = null;
+
     // Reset UV light off for new passenger & redraw documents
     this.uvActive = false;
     this.updateUvUi();
     this.redrawDocuments();
+    this.updateBagInspectorPanel();
+    this.redrawBagSearch();
     this.updateFlaggedBadges();
 
     // Check BOLO Surname Scanner upgrade
@@ -459,7 +611,11 @@ class SkyGuardGame {
   private setStation(station: CameraStation): void {
     if (this.station === station) return;
     this.station = station;
-    this.sound.playClick();
+    if (station === 'bagSearch') {
+      this.sound.playZipper();
+    } else {
+      this.sound.playClick();
+    }
     this.scene.setCameraStation(station);
 
     document.querySelectorAll<HTMLButtonElement>('[data-station]').forEach((btn) => {
@@ -468,9 +624,13 @@ class SkyGuardGame {
 
     this.stationDocs.classList.toggle('hidden', station !== 'documents');
     this.stationXRay.classList.toggle('hidden', station !== 'xray');
+    this.stationBagSearch.classList.toggle('hidden', station !== 'bagSearch');
 
     if (station === 'documents') {
       this.redrawDocuments();
+    } else if (station === 'bagSearch') {
+      this.updateBagInspectorPanel();
+      this.redrawBagSearch();
     }
   }
 
@@ -517,15 +677,88 @@ class SkyGuardGame {
     renderBoardingPass(this.boardingCtx, this.currentPax.boardingPass);
   }
 
+  private redrawBagSearch(): void {
+    renderBagSearchTable(this.bagSearchCtx, this.currentPax?.bag ?? null, {
+      selectedItemId: this.selectedBagItemId,
+      hoveredItemId: this.hoveredBagItemId,
+      draggingItemId: this.draggingBagItemId,
+    });
+  }
+
+  private updateBagInspectorPanel(): void {
+    const emptyEl = document.getElementById('inspector-empty')!;
+    const cardEl = document.getElementById('inspector-card')!;
+    const evidenceList = document.getElementById('evidence-list')!;
+
+    const selected = this.currentPax?.bag.items.find(
+      (i) => i.instanceId === this.selectedBagItemId && !i.seized,
+    );
+
+    if (!selected) {
+      emptyEl.classList.remove('hidden');
+      cardEl.classList.add('hidden');
+    } else {
+      emptyEl.classList.add('hidden');
+      cardEl.classList.remove('hidden');
+      document.getElementById('inspector-item-name')!.textContent = selected.template.name;
+      const statusEl = document.getElementById('inspector-item-status')!;
+      statusEl.textContent = selected.template.contraband
+        ? `PROHIBITED — ${selected.template.category.toUpperCase()}`
+        : 'AUTHORIZED CARRY-ON';
+      statusEl.className = `inspector-status ${selected.template.contraband ? 'contraband' : 'legal'}`;
+      document.getElementById('inspector-item-detail')!.textContent = selected.template.hint;
+    }
+
+    const seizedItems = this.currentPax?.bag.items.filter((i) => i.seized) ?? [];
+    evidenceList.innerHTML = '';
+    if (seizedItems.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'evidence-empty';
+      li.textContent = 'No items confiscated yet.';
+      evidenceList.appendChild(li);
+    } else {
+      for (const item of seizedItems) {
+        const li = document.createElement('li');
+        li.className = `evidence-item${item.template.contraband ? '' : ' legal-warning'}`;
+        const label = document.createElement('span');
+        label.textContent = item.template.name;
+        const retBtn = document.createElement('button');
+        retBtn.type = 'button';
+        retBtn.className = 'evidence-return-btn';
+        retBtn.textContent = 'RETURN';
+        retBtn.addEventListener('click', () => {
+          item.seized = false;
+          item.flagged = false;
+          this.sound.playClick();
+          this.updateFlaggedBadges();
+          this.updateBagInspectorPanel();
+          this.redrawBagSearch();
+        });
+        li.appendChild(label);
+        li.appendChild(retBtn);
+        evidenceList.appendChild(li);
+      }
+    }
+  }
+
   private updateFlaggedBadges(): void {
     const count = this.currentPax
-      ? this.currentPax.bag.items.filter((i) => i.flagged).length
+      ? this.currentPax.bag.items.filter((i) => i.flagged || i.seized).length
       : 0;
+    const seizedCount = this.currentPax
+      ? this.currentPax.bag.items.filter((i) => i.seized).length
+      : 0;
+
     document.getElementById('xray-flagged-status')!.textContent =
       `CLICK SUSPECTED CONTRABAND TO FLAG (${count} FLAGGED)`;
     const dot = document.getElementById('nav-flag-count')!;
     dot.textContent = String(count);
     dot.classList.toggle('hidden', count === 0);
+
+    document.getElementById('bag-seized-summary')!.textContent = `${seizedCount} SEIZED`;
+    const seizedDot = document.getElementById('nav-seized-count')!;
+    seizedDot.textContent = String(seizedCount);
+    seizedDot.classList.toggle('hidden', seizedCount === 0);
   }
 
   private setDecisionButtonsDisabled(disabled: boolean): void {
@@ -692,6 +925,7 @@ class SkyGuardGame {
     this.paxDialogue.classList.add('hidden');
     this.stationDocs.classList.add('hidden');
     this.stationXRay.classList.add('hidden');
+    this.stationBagSearch.classList.add('hidden');
     this.rulesDrawer.classList.add('hidden');
     this.modalDebrief.classList.remove('hidden');
   }
@@ -749,6 +983,7 @@ class SkyGuardGame {
     this.paxDialogue.classList.add('hidden');
     this.stationDocs.classList.add('hidden');
     this.stationXRay.classList.add('hidden');
+    this.stationBagSearch.classList.add('hidden');
     this.rulesDrawer.classList.add('hidden');
     this.feedbackToast.classList.add('hidden');
     this.viewport3d.classList.add('hidden');

@@ -4,7 +4,7 @@ export type XRayMode = 'STD' | 'OS' | 'MS' | 'INV';
 
 export type BeltState = 'FWD' | 'STOP' | 'REV';
 
-export type CameraStation = 'overview' | 'documents' | 'xray';
+export type CameraStation = 'overview' | 'documents' | 'xray' | 'bagSearch';
 
 export type HairStyle =
   | 'short'
@@ -80,6 +80,10 @@ export interface BagItemInstance {
   rotation: number;
   scale: number;
   flagged: boolean;
+  /** Physically confiscated out of the open bag during manual search */
+  seized?: boolean;
+  /** Manually examined on the inspection table */
+  inspected?: boolean;
 }
 
 export interface BagData {
@@ -92,6 +96,7 @@ export interface BagData {
   height: number;
   items: BagItemInstance[];
   hasLeadLining: boolean;
+  falseBottomOpened?: boolean;
 }
 
 export interface IdentityDocument {

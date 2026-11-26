@@ -33,6 +33,11 @@ const CAMERA_PRESETS: Record<CameraStation, CameraPreset> = {
     lookAt: new THREE.Vector3(1.38, 1.25, 0.05),
     fov: 45,
   },
+  bagSearch: {
+    pos: new THREE.Vector3(0.58, 1.72, 2.35),
+    lookAt: new THREE.Vector3(1.52, 0.92, 1.38),
+    fov: 44,
+  },
 };
 
 export class CheckpointScene {
@@ -629,6 +634,22 @@ export class CheckpointScene {
     monitorGroup.add(this.xrayScreenMesh);
 
     xrayGroup.add(monitorGroup);
+
+    // Secondary Stainless-Steel Manual Bag Search Table at the conveyor exit
+    const searchTableTop = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.07, 0.92), steelMat);
+    searchTableTop.position.set(-0.08, 0.86, 1.68);
+    searchTableTop.castShadow = true;
+    searchTableTop.receiveShadow = true;
+    xrayGroup.add(searchTableTop);
+
+    for (const tx of [-0.58, 0.42]) {
+      for (const tz of [1.28, 2.08]) {
+        const tLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.86, 10), darkMetalMat);
+        tLeg.position.set(tx, 0.43, tz);
+        xrayGroup.add(tLeg);
+      }
+    }
+
     this.scene.add(xrayGroup);
   }
 

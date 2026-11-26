@@ -224,4 +224,20 @@ export class SoundEngine {
     this.playTone(880, 0.12, 'square', 0.07, 0);
     this.playTone(660, 0.12, 'square', 0.07, 0.13);
   }
+
+  public playZipper(): void {
+    this.unlock();
+    if (this.muted || !this.ctx) return;
+    // Rapid metallic zipper teeth sequence
+    for (let i = 0; i < 8; i++) {
+      this.playTone(900 + i * 110, 0.025, 'triangle', 0.035, i * 0.022);
+    }
+  }
+
+  public playBagItemGrab(): void {
+    this.unlock();
+    if (this.muted || !this.ctx) return;
+    this.playTone(280, 0.05, 'triangle', 0.045, 0);
+    this.playTone(390, 0.04, 'sine', 0.03, 0.02);
+  }
 }

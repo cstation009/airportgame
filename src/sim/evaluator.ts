@@ -15,8 +15,9 @@ export function evaluateDecision(
   const hasWatchlist = idViolations.some((v) => v.code === 'WATCHLIST_HIT');
   const hasAnyViolation = pax.violations.length > 0;
 
-  const flaggedItems = pax.bag.items.filter((i) => i.flagged);
+  const flaggedItems = pax.bag.items.filter((i) => i.flagged || i.seized);
   const flaggedContrabandCount = flaggedItems.filter((i) => i.template.contraband).length;
+  const seizedContrabandCount = pax.bag.items.filter((i) => i.seized && i.template.contraband).length;
   const falseFlagCount = flaggedItems.filter((i) => !i.template.contraband).length;
 
   // Case 1: Passenger is completely clean
@@ -45,7 +46,7 @@ export function evaluateDecision(
       creditsDelta: -30,
       headline: 'FALSE POSITIVE — CITATION ISSUED',
       explanation:
-        'This passenger had valid credentials and no prohibited items in their luggage. Double-check dates, UV seals, and X-ray shapes before detaining.',
+        'This passenger had valid credentials and no prohibited items in their luggage. Double-check dates, UV seals, and open the bag to inspect ambiguous items before detaining.',
       missedViolations: [],
       caughtViolations: [],
       falseFlagCount,
@@ -80,9 +81,13 @@ export function evaluateDecision(
     );
     if (hasContraband || severeIdThreat) {
       const tagBonus = hasContraband && flaggedContrabandCount > 0 ? 30 : 0;
+      const physicalSeizeBonus = seizedContrabandCount > 0 ? 20 : 0;
       const cleanTagPenalty = falseFlagCount * 5;
-      const xp = Math.max(60, 105 + tagBonus - cleanTagPenalty);
-      const credits = Math.max(40, 70 + (tagBonus > 0 ? 25 : 0) - cleanTagPenalty);
+      const xp = Math.max(60, 105 + tagBonus + physicalSeizeBonus - cleanTagPenalty);
+      const credits = Math.max(
+        40,
+        70 + (tagBonus > 0 ? 25 : 0) + (physicalSeizeBonus > 0 ? 15 : 0) - cleanTagPenalty,
+      );
       return {
         correct: true,
         partial: hasContraband && flaggedContrabandCount === 0,
@@ -90,15 +95,17 @@ export function evaluateDecision(
         xpDelta: xp,
         creditsDelta: credits,
         headline:
-          hasContraband && flaggedContrabandCount > 0
-            ? 'CONTRABAND TAGGED & SEIZED!'
-            : hasWatchlist
-              ? 'WATCHLIST SUSPECT DETAINED!'
-              : 'THREAT NEUTRALIZED!',
+          seizedContrabandCount > 0
+            ? 'CONTRABAND PHYSICALLY CONFISCATED!'
+            : hasContraband && flaggedContrabandCount > 0
+              ? 'CONTRABAND TAGGED & SEIZED!'
+              : hasWatchlist
+                ? 'WATCHLIST SUSPECT DETAINED!'
+                : 'THREAT NEUTRALIZED!',
         explanation:
           pax.violations.map((v) => `${v.label} — ${v.detail}`).join(' • ') +
           (hasContraband && flaggedContrabandCount === 0
-            ? ' (Tip: Click the contraband on the X-Ray screen to tag it for +30 bonus XP!)'
+            ? ' (Tip: Tag on X-Ray or open the bag [4] to physically seize contraband for bonus XP!)'
             : ''),
         missedViolations: [],
         caughtViolations: pax.violations,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AIR_MARSHAL_UNLOCK_LEVEL, getRankForXp, getShiftConfig } from '../../data/levels';
+import { getSearchBagRect, hitTestSearchBagItem } from '../bagSearchRenderer';
 import { evaluateDecision } from '../evaluator';
 import { createSeededRng, generatePassengerCase, generateWatchlist } from '../generator';
 import { getBagScreenOrigin, hitTestBagItem, sampleMaterialAtCursor } from '../xrayRenderer';
@@ -91,5 +92,42 @@ describe('SkyGuard checkpoint simulation', () => {
     const reading = sampleMaterialAtCursor(680, 330, pax.bag, 0, ox + target.x, oy + target.y);
     expect(reading.material).not.toBe('air');
     expect(reading.densityPct).toBeGreaterThan(0);
+  });
+
+  it('supports physical bag inspection, false-bottom gating, and seizure bonus XP', () => {
+    const rng = createSeededRng(4444);
+    const cfg = getShiftConfig(2);
+    const cases = Array.from({ length: 30 }, (_, i) => generatePassengerCase(i, cfg, [], rng));
+    const smuggler = cases.find((p) => p.violations.some((v) => v.code === 'CONTRABAND_ITEM'))!;
+    expect(smuggler).toBeDefined();
+
+    const contraband = smuggler.bag.items.find((i) => i.template.contraband)!;
+    const { ox, oy, scale } = getSearchBagRect(560, 330, smuggler.bag);
+
+    // Lead-lined false bottom blocks grabbing items until peeled open
+    smuggler.bag.hasLeadLining = true;
+    smuggler.bag.falseBottomOpened = false;
+    expect(
+      hitTestSearchBagItem(560, 330, smuggler.bag, ox + contraband.x * scale, oy + contraband.y * scale),
+    ).toBeNull();
+
+    // Opening the false bottom exposes the item for physical inspection & seizure
+    smuggler.bag.falseBottomOpened = true;
+    const found = hitTestSearchBagItem(
+      560,
+      330,
+      smuggler.bag,
+      ox + contraband.x * scale,
+      oy + contraband.y * scale,
+    );
+    expect(found).not.toBeNull();
+
+    // Physically seizing awards higher XP than X-ray tagging alone
+    contraband.flagged = true;
+    const taggedOnly = evaluateDecision(smuggler, 'CONFISCATE_DETAIN');
+    contraband.seized = true;
+    const seizedResult = evaluateDecision(smuggler, 'CONFISCATE_DETAIN');
+    expect(seizedResult.xpDelta).toBeGreaterThan(taggedOnly.xpDelta);
+    expect(seizedResult.headline).toContain('PHYSICALLY CONFISCATED');
   });
 });

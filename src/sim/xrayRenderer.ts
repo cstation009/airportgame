@@ -175,6 +175,7 @@ export function hitTestBagItem(
   // Iterate in reverse (contraband & top-layer items prioritized)
   for (let i = bag.items.length - 1; i >= 0; i--) {
     const item = bag.items[i];
+    if (item.seized) continue;
     const dx = localBagX - item.x;
     const dy = localBagY - item.y;
     const cos = Math.cos(-item.rotation);
@@ -321,8 +322,9 @@ export function renderXRayMonitor(
       ctx.fillRect(28, 22, bag.width - 56, bag.height - 44);
     }
 
-    // 3. Render every item inside the bag
+    // 3. Render every remaining item inside the bag
     for (const item of bag.items) {
+      if (item.seized) continue;
       ctx.save();
       ctx.translate(item.x, item.y);
       ctx.rotate(item.rotation);
@@ -341,6 +343,7 @@ export function renderXRayMonitor(
     // 4. Overlay tactical target boxes (source-over so crisp HUD stays bright)
     ctx.globalCompositeOperation = 'source-over';
     for (const item of bag.items) {
+      if (item.seized) continue;
       const isHovered = item.instanceId === opts.hoveredItemId;
       if (!item.flagged && !isHovered) continue;
 
