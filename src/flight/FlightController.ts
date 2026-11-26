@@ -30,17 +30,21 @@ export class FlightController {
   private projectiles: FlightProjectile[] = [];
   private projCounter = 0;
 
-  // Player Marshal state
+  // First-Person Air Marshal state (yaw = 0 faces straight down aisle toward cockpit -Z!)
   private px = 0;
   private pz = 9.8;
-  private facingAngle = Math.PI;
-  private aimWorldX = 0;
-  private aimWorldZ = 4.0;
+  private yaw = 0;
+  private pitch = -0.05;
+  private targetYawOffset = 0;
+  private targetPitchOffset = -0.05;
   private crouchHeld = false;
   private inCover = false;
+  private pointerLocked = false;
 
+  // Generous player durability & Taser ammo for fun, accessible action
   private readonly maxVest: number;
   private vestIntegrity: number;
+  private timeSinceHit = 5;
   private cockpitIntegrity = 100;
   private readonly maxCartridges: number;
   private cartridges: number;
@@ -59,6 +63,8 @@ export class FlightController {
   // Flight HUD DOM bindings
   private readonly hudRoot = document.getElementById('flight-hud')!;
   private readonly intelToast = document.getElementById('flight-intel-toast')!;
+  private readonly crosshair = document.getElementById('fps-crosshair')!;
+  private readonly crosshairLabel = document.getElementById('fps-target-label')!;
   private intelTimer = 0;
 
   constructor(
@@ -73,9 +79,10 @@ export class FlightController {
     this.sound = sound;
     this.onComplete = onComplete;
 
-    this.maxVest = progress.upgrades.kevlarVest ? 150 : 100;
+    // Generous vest armor (150 base, 225 with Kevlar upgrade) & 4 Taser cartridges (6 upgraded)
+    this.maxVest = progress.upgrades.kevlarVest ? 225 : 150;
     this.vestIntegrity = this.maxVest;
-    this.maxCartridges = progress.upgrades.dualTaser ? 4 : 2;
+    this.maxCartridges = progress.upgrades.dualTaser ? 6 : 4;
     this.cartridges = this.maxCartridges;
 
     this.obstacles = buildCabinObstacles();
@@ -86,11 +93,11 @@ export class FlightController {
     this.hudRoot.classList.remove('hidden');
     this.bindEvents();
     this.showIntel(
-      `BOARDED ${mission.flightNumber} (${mission.route})`,
-      `Move forward (WASD), crouch behind seats/carts (Shift) for cover, scan nervous passengers (E/Right-Click), and tase hijackers (Left-Click) before they reach the cockpit!`,
+      `FIRST-PERSON AIR MARSHAL — ${mission.flightNumber} (${mission.route})`,
+      'Walk forward (W/S), move mouse or ←/→ to look, hold Shift to duck behind seats, and Left-Click to zap hijackers (1-shot stun!). Nearby suspects auto-scan!',
       'info',
     );
-    this.updateHud();
+    this.updateHud(null);
 
     this.lastTs = performance.now();
     this.rafId = requestAnimationFrame(this.loop);
@@ -102,6 +109,7 @@ export class FlightController {
     window.addEventListener('pointermove', this.onPointerMove);
     window.addEventListener('pointerdown', this.onPointerDown);
     window.addEventListener('contextmenu', this.onContextMenu);
+    document.addEventListener('pointerlockchange', this.onPointerLockChange);
   }
 
   private unbindEvents(): void {
@@ -110,6 +118,27 @@ export class FlightController {
     window.removeEventListener('pointermove', this.onPointerMove);
     window.removeEventListener('pointerdown', this.onPointerDown);
     window.removeEventListener('contextmenu', this.onContextMenu);
+    document.removeEventListener('pointerlockchange', this.onPointerLockChange);
+    if (document.pointerLockElement) {
+      document.exitPointerLock?.();
+    }
+  }
+
+  private onPointerLockChange = (): void => {
+    this.pointerLocked = document.pointerLockElement === this.scene.getDomElement();
+    const lockBtn = document.getElementById('btn-flight-lock');
+    if (lockBtn) {
+      lockBtn.textContent = this.pointerLocked ? 'MOUSE LOCKED (ESC)' : 'LOCK MOUSE [L]';
+    }
+  };
+
+  public togglePointerLock(): void {
+    if (!this.running || this.finished) return;
+    if (document.pointerLockElement) {
+      document.exitPointerLock?.();
+    } else {
+      this.scene.getDomElement().requestPointerLock?.();
+    }
   }
 
   private onContextMenu = (e: MouseEvent): void => {
@@ -127,6 +156,8 @@ export class FlightController {
       this.scanNearestPassenger();
     } else if (k === 'r') {
       this.startReload();
+    } else if (k === 'l') {
+      this.togglePointerLock();
     }
   };
 
@@ -140,26 +171,27 @@ export class FlightController {
 
   private onPointerMove = (e: PointerEvent): void => {
     if (!this.running || this.finished) return;
-    const pt = this.scene.screenToCabinFloor(e.clientX, e.clientY);
-    if (pt) {
-      this.aimWorldX = pt.x;
-      this.aimWorldZ = pt.z;
+    if (this.pointerLocked) {
+      // Classic smooth 360° FPS mouse look
+      this.yaw -= e.movementX * 0.0022;
+      this.pitch = Math.max(-0.42, Math.min(0.32, this.pitch - e.movementY * 0.0018));
+    } else {
+      // Effortless free-cursor steering (ideal for trackpads & quick play without locking!)
+      const w = window.innerWidth || 1;
+      const h = window.innerHeight || 1;
+      const nx = (e.clientX / w) * 2 - 1; // -1..+1
+      const ny = (e.clientY / h) * 2 - 1;
+      this.targetYawOffset = -nx * 0.72;
+      this.targetPitchOffset = Math.max(-0.35, Math.min(0.22, -ny * 0.28 - 0.04));
     }
   };
 
   private onPointerDown = (e: PointerEvent): void => {
     if (!this.running || this.finished) return;
-    // Ignore clicks on HUD buttons
     if ((e.target as HTMLElement)?.closest('button')) return;
 
-    const pt = this.scene.screenToCabinFloor(e.clientX, e.clientY);
-    if (pt) {
-      this.aimWorldX = pt.x;
-      this.aimWorldZ = pt.z;
-    }
-
     if (e.button === 2) {
-      this.scanNearestPassenger(pt?.x, pt?.z);
+      this.scanNearestPassenger();
     } else if (e.button === 0) {
       this.fireTaser();
     }
@@ -177,53 +209,91 @@ export class FlightController {
 
   private startReload(): void {
     if (this.reloadTimer > 0 || this.cartridges >= this.maxCartridges) return;
-    this.reloadTimer = this.progress.upgrades.dualTaser ? 0.95 : 1.45;
+    this.reloadTimer = this.progress.upgrades.dualTaser ? 0.55 : 0.78;
     this.sound.playClick(true);
-    this.showIntel('RELOADING TASER CARTRIDGES...', 'Stay behind seat cover until charged!', 'info');
+    this.showIntel('RECHARGING TASER...', 'Back online in less than a second!', 'info');
   }
 
-  private scanNearestPassenger(targetX?: number, targetZ?: number): void {
+  /** Find which passenger is closest to the center First-Person crosshair (with generous aim-assist cone!) */
+  private findCrosshairTarget(maxRange = 12.5): CabinPerson | null {
+    const { origin, dir } = this.scene.getAimRay(0, 0);
     let best: CabinPerson | null = null;
-    let bestDist = 4.2;
+    let bestScore = Infinity;
 
     for (const p of this.people) {
       if (p.state === 'subdued') continue;
-      const distPlayer = Math.hypot(p.x - this.px, p.z - this.pz);
-      if (distPlayer > 4.6) continue;
-      const scoreDist =
-        targetX !== undefined && targetZ !== undefined
-          ? Math.hypot(p.x - targetX, p.z - targetZ)
-          : distPlayer;
-      if (scoreDist < bestDist) {
-        bestDist = scoreDist;
+      if (p.role === 'civilian' && p.ducked) continue;
+
+      const isSeated = p.state === 'seated_hidden' || p.state === 'suspicious_tell';
+      const targetY = isSeated ? 1.12 : 1.32;
+      const toX = p.x - origin.x;
+      const toY = targetY - origin.y;
+      const toZ = p.z - origin.z;
+      const proj = toX * dir.x + toY * dir.y + toZ * dir.z;
+      if (proj < 0.35 || proj > maxRange) continue;
+
+      const perpX = toX - dir.x * proj;
+      const perpY = toY - dir.y * proj;
+      const perpZ = toZ - dir.z * proj;
+      const perpDist = Math.hypot(perpX, perpY, perpZ);
+
+      // Generous magnetic lock radius for hijackers so first-person aiming feels crisp & satisfying!
+      const lockRadius = p.role === 'hijacker' ? 0.85 : 0.42;
+      if (perpDist > lockRadius) continue;
+
+      // Make sure no bulkhead blocks the shot
+      const blocked = segmentHitsObstacle(this.px, this.pz, p.x, p.z, this.obstacles, false).hit;
+      if (blocked) continue;
+
+      // Prioritize hijackers slightly when overlapping sightlines
+      const score = perpDist - (p.role === 'hijacker' ? 0.28 : 0);
+      if (score < bestScore) {
+        bestScore = score;
         best = p;
       }
     }
 
-    if (!best) {
-      this.showIntel('NO PASSENGER IN SCAN RANGE', 'Move closer down the aisle and press E / Right-Click to inspect.', 'info');
+    return best;
+  }
+
+  private scanNearestPassenger(): void {
+    const aimed = this.findCrosshairTarget(9.5);
+    let target = aimed;
+
+    if (!target) {
+      let bestDist = 6.2;
+      for (const p of this.people) {
+        if (p.state === 'subdued' || p.scanned) continue;
+        const d = Math.hypot(p.x - this.px, p.z - this.pz);
+        if (d < bestDist) {
+          bestDist = d;
+          target = p;
+        }
+      }
+    }
+
+    if (!target) {
+      this.showIntel('CABIN SECTOR SCANNED', 'Move further up the aisle toward the cockpit to check remaining rows.', 'info');
       return;
     }
 
-    best.scanned = true;
-    if (best.role === 'hijacker') {
+    target.scanned = true;
+    if (target.role === 'hijacker') {
       this.sound.playScanPing(true);
       this.showIntel(
-        `HOSTILE IDENTIFIED — SEAT ${best.seatCode} (${best.name})`,
-        `${best.tellHint}. Fire Taser NOW before they rush the cockpit!`,
+        `HOSTILE LOCKED — SEAT ${target.seatCode} (${target.name})`,
+        `${target.tellHint}. Left-Click NOW to zap & subdue!`,
         'danger',
       );
-      // Exposed hijacker immediately reacts if not already active/stunned
-      if (best.state === 'suspicious_tell' || best.state === 'seated_hidden') {
-        // Give Marshal a brief surprise window (1-shot subdue if hit while just standing up!)
-        best.hp = 1;
-        best.activationTimer = Math.min(best.activationTimer, 1.35);
+      if (target.state === 'suspicious_tell' || target.state === 'seated_hidden') {
+        target.hp = 1;
+        target.activationTimer = Math.min(target.activationTimer, 3.2);
       }
     } else {
       this.sound.playScanPing(false);
       this.showIntel(
-        `CLEARED CIVILIAN — SEAT ${best.seatCode} (${best.name})`,
-        best.tellHint,
+        `CIVILIAN CLEARED — SEAT ${target.seatCode} (${target.name})`,
+        target.tellHint,
         'ok',
       );
     }
@@ -236,77 +306,42 @@ export class FlightController {
       return;
     }
 
-    this.cartridges -= 1;
-    this.fireCooldown = 0.28;
-    this.sound.playTaserFire();
+    const target = this.findCrosshairTarget(12.5);
 
-    // Calculate ray from Marshal toward mouse aim point (max taser range 8.5m)
-    const dx = this.aimWorldX - this.px;
-    const dz = this.aimWorldZ - this.pz;
-    const dist = Math.hypot(dx, dz) || 1;
-    const range = Math.min(8.5, Math.max(2.5, dist));
-    const dirX = dx / dist;
-    const dirZ = dz / dist;
-
-    let endX = this.px + dirX * range;
-    let endZ = this.pz + dirZ * range;
-
-    // Check if tall cover (bulkheads / galley carts) intercepts the taser shot
-    const wallHit = segmentHitsObstacle(this.px, this.pz, endX, endZ, this.obstacles, false);
-    if (wallHit.hit) {
-      endX = wallHit.hitX;
-      endZ = wallHit.hitZ;
-    }
-
-    // Check closest person intersected along the taser line
-    let hitPerson: CabinPerson | null = null;
-    let bestProjT = Math.hypot(endX - this.px, endZ - this.pz);
-
-    for (const p of this.people) {
-      if (p.state === 'subdued') continue;
-      // Ignore ducked civilians so players don't accidentally hit ducking bystanders across aisles
-      if (p.role === 'civilian' && p.ducked) continue;
-
-      const toPx = p.x - this.px;
-      const toPz = p.z - this.pz;
-      const proj = toPx * dirX + toPz * dirZ;
-      if (proj < 0.2 || proj > bestProjT) continue;
-      const perp = Math.abs(toPx * -dirZ + toPz * dirX);
-      const hitRadius = p.role === 'hijacker' ? 0.56 : 0.36;
-      if (perp <= hitRadius) {
-        bestProjT = proj;
-        hitPerson = p;
-      }
-    }
-
-    if (hitPerson) {
-      endX = hitPerson.x;
-      endZ = hitPerson.z;
-      this.handleTaserHit(hitPerson);
-    }
-
-    this.scene.spawnTaserBeam(this.px, this.pz, endX, endZ);
-
-    if (this.cartridges === 0) {
-      this.startReload();
-    }
-    this.updateHud();
-  }
-
-  private handleTaserHit(target: CabinPerson): void {
-    if (target.role === 'civilian') {
-      this.civilianIncidents += 1;
-      target.ducked = true;
-      this.sound.playDecisionResult(false, false);
+    // Friendly Civilian Safety Interlock: warn instead of harshly punishing if aimed at a civilian!
+    if (target && target.role === 'civilian') {
+      this.sound.playClick(false);
+      target.scanned = true;
       this.showIntel(
-        'SAFETY VIOLATION — CIVILIAN HIT!',
-        `Watch your fire! ${target.name} (Seat ${target.seatCode}) is a civilian passenger. Scan (E) before firing on seated travelers.`,
-        'danger',
+        'SAFETY INTERLOCK — CIVILIAN IN SIGHTS',
+        `${target.name} (Seat ${target.seatCode}) is a bystander! Aim for the red-marked hijackers.`,
+        'info',
       );
       return;
     }
 
-    // Hijacker hit!
+    this.cartridges -= 1;
+    this.fireCooldown = 0.25;
+    this.sound.playTaserFire();
+
+    if (target && target.role === 'hijacker') {
+      const isSeated = target.state === 'seated_hidden' || target.state === 'suspicious_tell';
+      this.scene.spawnTaserBeamTo(target.x, isSeated ? 1.1 : 1.32, target.z);
+      this.handleTaserHit(target);
+    } else {
+      const { origin, dir } = this.scene.getAimRay(0, 0);
+      const missX = origin.x + dir.x * 8.5;
+      const missY = Math.max(0.2, origin.y + dir.y * 8.5);
+      const missZ = origin.z + dir.z * 8.5;
+      this.scene.spawnTaserBeamTo(missX, missY, missZ);
+    }
+
+    if (this.cartridges === 0) {
+      this.startReload();
+    }
+  }
+
+  private handleTaserHit(target: CabinPerson): void {
     target.scanned = true;
     target.hp -= 1;
 
@@ -318,10 +353,10 @@ export class FlightController {
         (p) => p.role === 'hijacker' && p.state !== 'subdued',
       ).length;
       this.showIntel(
-        `HIJACKER SUBDUED & CUFFED! (${target.name})`,
+        `HIJACKER SUBDUED! (${target.name})`,
         remaining > 0
-          ? `${remaining} hostile${remaining > 1 ? 's' : ''} still aboard — sweep forward and protect the flight deck!`
-          : 'All hijackers neutralized! Cabin secured!',
+          ? `Nice shot! ${remaining} hostile${remaining > 1 ? 's' : ''} left — push forward toward the cockpit!`
+          : 'All hijackers neutralized! Flight deck secured!',
         'ok',
       );
 
@@ -333,10 +368,10 @@ export class FlightController {
       }
     } else {
       target.state = 'stunned';
-      target.stunTimer = 2.0;
+      target.stunTimer = 3.2;
       this.showIntel(
-        `HOSTILE SHOCKED — ${target.name}`,
-        'Target staggered by Taser! Follow up with a second shot to subdue & zip-tie!',
+        `HOSTILE STUNNED — ${target.name}`,
+        'Target shocked! Click once more to subdue & zip-tie!',
         'info',
       );
     }
@@ -354,12 +389,10 @@ export class FlightController {
 
     hj.state = 'exposed_advancing';
     hj.scanned = true;
-    // Step out from seat into the center aisle cleanly
-    hj.x = hj.seatX < 0 ? -0.35 : 0.35;
+    hj.x = hj.seatX < 0 ? -0.32 : 0.32;
     this.sound.playHijackerAlert();
-    this.scene.triggerShake(0.12);
+    this.scene.triggerShake(0.06);
 
-    // Nearby civilians immediately duck down for safety!
     for (const other of this.people) {
       if (other.role === 'civilian') {
         other.ducked = true;
@@ -367,8 +400,8 @@ export class FlightController {
     }
 
     this.showIntel(
-      `ALERT: HIJACKER RUSHING AISLE — SEAT ${hj.seatCode}!`,
-      `${hj.name} is moving toward the Flight Deck! Take cover behind seats/carts (Shift) and Tase them!`,
+      `ALERT: HIJACKER IN AISLE — SEAT ${hj.seatCode}!`,
+      `${hj.name} is moving toward the Flight Deck! Aim your crosshair until it turns RED and Left-Click to Tase!`,
       'danger',
     );
   }
@@ -408,23 +441,23 @@ export class FlightController {
     }, 900);
   }
 
-  private updateHud(): void {
+  private updateHud(aimedTarget: CabinPerson | null): void {
     const subdued = this.people.filter(
       (p) => p.role === 'hijacker' && p.state === 'subdued',
     ).length;
-    const activeCount = this.people.filter(
+    const activeHijackers = this.people.filter(
       (p) =>
         p.role === 'hijacker' &&
         (p.state === 'exposed_advancing' ||
           p.state === 'taking_cover' ||
           p.state === 'breaching_cockpit' ||
           p.state === 'stunned'),
-    ).length;
+    );
 
     document.getElementById('flight-hud-id')!.textContent =
-      `${this.mission.flightNumber} • ${this.mission.route} • ${this.mission.aircraft}`;
+      `${this.mission.flightNumber} • ${this.mission.route} • FIRST-PERSON`;
     document.getElementById('flight-hud-hostiles')!.textContent =
-      `${subdued} / ${this.mission.hijackerCount} SUBDUED${activeCount > 0 ? ` (${activeCount} ACTIVE!)` : ''}`;
+      `${subdued} / ${this.mission.hijackerCount} SUBDUED${activeHijackers.length > 0 ? ` (${activeHijackers.length} ACTIVE!)` : ''}`;
 
     const cockpitPct = Math.max(0, Math.round(this.cockpitIntegrity));
     const vestPct = Math.max(0, Math.round((this.vestIntegrity / this.maxVest) * 100));
@@ -437,13 +470,34 @@ export class FlightController {
 
     const taserText =
       this.reloadTimer > 0
-        ? `RELOADING (${this.reloadTimer.toFixed(1)}s)`
-        : `${this.cartridges} / ${this.maxCartridges} CARTRIDGES`;
+        ? `RECHARGING (${this.reloadTimer.toFixed(1)}s)`
+        : `${this.cartridges} / ${this.maxCartridges} TASER`;
     document.getElementById('flight-taser-status')!.textContent = taserText;
 
     const coverPill = document.getElementById('flight-cover-pill')!;
-    coverPill.textContent = this.inCover ? 'IN COVER — PROTECTED' : 'EXPOSED (HOLD SHIFT NEAR SEATS)';
+    coverPill.textContent = this.inCover
+      ? 'IN COVER — PROTECTED'
+      : this.crouchHeld
+        ? 'CROUCHING (MOVE NEAR SEATS/CART)'
+        : 'STANDING (HOLD SHIFT TO DUCK)';
     coverPill.classList.toggle('protected', this.inCover);
+
+    // Dynamic First-Person Crosshair Target Lock feedback
+    this.crosshair.classList.remove('lock-hostile', 'lock-suspect', 'lock-civilian');
+    if (aimedTarget && aimedTarget.role === 'hijacker') {
+      this.crosshair.classList.add('lock-hostile');
+      this.crosshairLabel.textContent = `⚡ HOSTILE LOCKED — CLICK TO TASE (${aimedTarget.seatCode})`;
+    } else if (aimedTarget && aimedTarget.role === 'civilian') {
+      this.crosshair.classList.add('lock-civilian');
+      this.crosshairLabel.textContent = `CIVILIAN (${aimedTarget.seatCode}) — HOLD FIRE`;
+    } else if (activeHijackers.length > 0) {
+      const nearest = activeHijackers[0];
+      const dist = Math.round(Math.hypot(nearest.x - this.px, nearest.z - this.pz));
+      this.crosshair.classList.add('lock-suspect');
+      this.crosshairLabel.textContent = `⚠ ACTIVE HIJACKER ${dist}m AHEAD`;
+    } else {
+      this.crosshairLabel.textContent = '';
+    }
   }
 
   private loop = (ts: number): void => {
@@ -451,27 +505,51 @@ export class FlightController {
     const dt = Math.max(0.001, Math.min(0.05, (ts - this.lastTs) / 1000));
     this.lastTs = ts;
     this.elapsedSeconds += dt;
+    this.timeSinceHit += dt;
 
-    // 1. Player movement & cover mechanics
-    let mx = 0;
-    let mz = 0;
-    if (this.keys.has('w') || this.keys.has('arrowup')) mz -= 1;
-    if (this.keys.has('s') || this.keys.has('arrowdown')) mz += 1;
-    if (this.keys.has('a') || this.keys.has('arrowleft')) mx -= 1;
-    if (this.keys.has('d') || this.keys.has('arrowright')) mx += 1;
+    // 1. First-Person look turning (Arrow Left/Right + smooth mouse steering)
+    if (this.keys.has('arrowleft')) this.yaw += 1.9 * dt;
+    if (this.keys.has('arrowright')) this.yaw -= 1.9 * dt;
 
-    const moving = mx !== 0 || mz !== 0;
-    const nearCov = isNearCover(this.px, this.pz, this.obstacles, 0.62);
+    if (!this.pointerLocked) {
+      // Smoothly blend toward mouse look angle without fighting keyboard turn
+      if (!this.keys.has('arrowleft') && !this.keys.has('arrowright')) {
+        this.yaw += (this.targetYawOffset - this.yaw) * Math.min(1, dt * 6.5);
+      }
+      this.pitch += (this.targetPitchOffset - this.pitch) * Math.min(1, dt * 6.5);
+    }
+
+    // 2. First-Person WASD movement relative to camera yaw
+    let forward = 0;
+    let strafe = 0;
+    if (this.keys.has('w') || this.keys.has('arrowup')) forward += 1;
+    if (this.keys.has('s') || this.keys.has('arrowdown')) forward -= 1;
+    if (this.keys.has('a')) strafe -= 1;
+    if (this.keys.has('d')) strafe += 1;
+
+    const moving = forward !== 0 || strafe !== 0;
+    const nearCov = isNearCover(this.px, this.pz, this.obstacles, 0.72);
     this.inCover = this.crouchHeld && nearCov;
 
     if (moving) {
-      const len = Math.hypot(mx, mz);
-      const speed = this.crouchHeld ? 2.2 : 3.85;
+      // Forward vector for Three.js YXZ yaw is (-sin(yaw), -cos(yaw))
+      const fwdX = -Math.sin(this.yaw);
+      const fwdZ = -Math.cos(this.yaw);
+      const rightX = Math.cos(this.yaw);
+      const rightZ = -Math.sin(this.yaw);
+
+      let vx = fwdX * forward + rightX * strafe;
+      let vz = fwdZ * forward + rightZ * strafe;
+      const len = Math.hypot(vx, vz) || 1;
+      vx /= len;
+      vz /= len;
+
+      const speed = this.crouchHeld ? 2.5 : 4.2;
       const next = resolveCabinMovement(
         this.px,
         this.pz,
-        this.px + (mx / len) * speed * dt,
-        this.pz + (mz / len) * speed * dt,
+        this.px + vx * speed * dt,
+        this.pz + vz * speed * dt,
         0.26,
         this.obstacles,
       );
@@ -479,15 +557,12 @@ export class FlightController {
       this.pz = next.z;
     }
 
-    // Regenerate vest armor slightly when safely crouched behind cover
-    if (this.inCover && this.vestIntegrity < this.maxVest) {
-      const regen = this.progress.upgrades.kevlarVest ? 12 : 6;
+    // Generous vest recovery in cover OR after 2.2s out of fire
+    if (this.vestIntegrity < this.maxVest && (this.inCover || this.timeSinceHit > 2.2)) {
+      const regen = this.inCover ? 22 : 10;
       this.vestIntegrity = Math.min(this.maxVest, this.vestIntegrity + regen * dt);
     }
 
-    this.facingAngle = Math.atan2(this.aimWorldX - this.px, this.aimWorldZ - this.pz);
-
-    // Cooldowns & reload timer
     if (this.fireCooldown > 0) this.fireCooldown -= dt;
     if (this.reloadTimer > 0) {
       this.reloadTimer -= dt;
@@ -504,30 +579,43 @@ export class FlightController {
       }
     }
 
-    // 2. Hijacker AI state machine
+    // 3. Auto-Proximity Air Marshal Visor Scan: automatically flags nearby hijackers as you walk close!
+    for (const p of this.people) {
+      if (p.scanned || p.state === 'subdued') continue;
+      const dist = Math.hypot(p.x - this.px, p.z - this.pz);
+      if (dist < 4.2) {
+        p.scanned = true;
+        if (p.role === 'hijacker') {
+          this.sound.playScanPing(true);
+          this.showIntel(
+            `VISOR AUTO-DETECTED HOSTILE — SEAT ${p.seatCode}!`,
+            `${p.name}: ${p.tellHint}. Left-Click to zap before they rush the cockpit!`,
+            'danger',
+          );
+        }
+      }
+    }
+
+    // 4. Hijacker AI (slower, fairer pacing)
     let cockpitUnderAttack = false;
     for (const p of this.people) {
       if (p.role !== 'hijacker' || p.state === 'subdued') continue;
 
       if (p.state === 'stunned') {
         p.stunTimer -= dt;
-        if (p.stunTimer <= 0) {
-          p.state = 'exposed_advancing';
-        }
+        if (p.stunTimer <= 0) p.state = 'exposed_advancing';
         continue;
       }
 
       if (p.state === 'suspicious_tell' || p.state === 'seated_hidden') {
         p.activationTimer -= dt;
-        // Also blow cover if the Marshal walks right past them heading forward!
-        if (p.activationTimer <= 0 || this.pz < p.z - 1.35) {
+        if (p.activationTimer <= 0 || this.pz < p.z - 2.0) {
           this.exposeHijacker(p);
         }
         continue;
       }
 
       if (p.state === 'exposed_advancing' || p.state === 'taking_cover') {
-        // Move down the aisle toward the Flight Deck door (z = -12.6)
         const targetZ = CABIN_BOUNDS.cockpitDoorZ + 0.7;
         const targetX = p.z < -2.6 && p.z > -4.8 ? -0.35 : p.z > 1.7 && p.z < 3.4 ? 0.35 : 0;
 
@@ -547,30 +635,18 @@ export class FlightController {
         p.x = moved.x;
         p.z = moved.z;
 
-        // Face Marshal when firing back, otherwise face cockpit
         const distMarshal = Math.hypot(this.px - p.x, this.pz - p.z);
         p.facingAngle =
-          distMarshal < 8.5
-            ? Math.atan2(this.px - p.x, this.pz - p.z)
-            : Math.atan2(dx, dz);
+          distMarshal < 9.0 ? Math.atan2(this.px - p.x, this.pz - p.z) : Math.atan2(dx, dz);
 
-        // Fire back at the Marshal if in range & clear line of sight
         p.fireCooldown -= dt;
-        if (p.fireCooldown <= 0 && distMarshal < 8.8) {
-          const losBlocked = segmentHitsObstacle(
-            p.x,
-            p.z,
-            this.px,
-            this.pz,
-            this.obstacles,
-            false,
-          ).hit;
-
+        if (p.fireCooldown <= 0 && distMarshal < 8.5) {
+          const losBlocked = segmentHitsObstacle(p.x, p.z, this.px, this.pz, this.obstacles, false).hit;
           if (!losBlocked) {
             p.fireCooldown = this.mission.hijackerFireInterval;
-            const spread = (Math.random() - 0.5) * 0.14;
+            const spread = (Math.random() - 0.5) * 0.22;
             const baseAng = Math.atan2(this.px - p.x, this.pz - p.z) + spread;
-            const projSpeed = 10.5;
+            const projSpeed = 7.8;
             this.projectiles.push({
               id: `hp-${++this.projCounter}`,
               fromPlayer: false,
@@ -578,21 +654,21 @@ export class FlightController {
               z: p.z,
               vx: Math.sin(baseAng) * projSpeed,
               vz: Math.cos(baseAng) * projSpeed,
-              life: 1.4,
+              life: 1.5,
             });
             this.sound.playHostileShot();
           } else {
-            p.fireCooldown = 0.5;
+            p.fireCooldown = 0.7;
           }
         }
       } else if (p.state === 'breaching_cockpit') {
         cockpitUnderAttack = true;
-        this.cockpitIntegrity -= 9.5 * dt;
+        this.cockpitIntegrity -= 4.5 * dt;
         if (this.cockpitIntegrity <= 0) {
           this.cockpitIntegrity = 0;
           this.completeMission(
             false,
-            'FLIGHT DECK BREACHED! A hijacker forced open the cockpit door before you could neutralize them.',
+            'FLIGHT DECK BREACHED! Sprint down the aisle and zap hijackers before they force open the door.',
           );
           return;
         }
@@ -602,12 +678,12 @@ export class FlightController {
     if (cockpitUnderAttack) {
       this.alarmBeepCooldown -= dt;
       if (this.alarmBeepCooldown <= 0) {
-        this.alarmBeepCooldown = 0.9;
+        this.alarmBeepCooldown = 1.1;
         this.sound.playCockpitAlarm();
       }
     }
 
-    // 3. Advance hostile projectiles & check cover / Marshal vest hits
+    // 5. Advance hostile projectiles (gentle damage, easily dodged or blocked with Shift cover!)
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const pr = this.projectiles[i];
       const nextX = pr.x + pr.vx * dt;
@@ -625,20 +701,21 @@ export class FlightController {
 
       if (!pr.fromPlayer) {
         const distPlayer = Math.hypot(pr.x - this.px, pr.z - this.pz);
-        if (distPlayer < 0.38) {
+        if (distPlayer < 0.36) {
           this.projectiles.splice(i, 1);
-          if (this.inCover) {
-            // Safely deflected by seat/cart cover!
+          if (this.inCover || this.crouchHeld) {
+            // Ducking cleanly avoids incoming shots!
             this.sound.playClick(false);
           } else {
-            this.vestIntegrity -= 24;
-            this.scene.triggerShake(0.2);
+            this.timeSinceHit = 0;
+            this.vestIntegrity -= 12;
+            this.scene.triggerShake(0.08);
             this.sound.playDecisionResult(false, false);
             if (this.vestIntegrity <= 0) {
               this.vestIntegrity = 0;
               this.completeMission(
                 false,
-                'AIR MARSHAL INCAPACITATED! Use Shift/Space behind seats and beverage carts to block hostile fire.',
+                'AIR MARSHAL VEST DEPLETED! Hold Shift to duck behind seats or beverage carts whenever a hijacker fires.',
               );
               return;
             }
@@ -647,36 +724,24 @@ export class FlightController {
       }
     }
 
-    // 4. Compute live laser sight termination point
-    const dx = this.aimWorldX - this.px;
-    const dz = this.aimWorldZ - this.pz;
-    const len = Math.hypot(dx, dz) || 1;
-    const maxL = Math.min(8.5, len);
-    let aimEndX = this.px + (dx / len) * maxL;
-    let aimEndZ = this.pz + (dz / len) * maxL;
-    const laserBlock = segmentHitsObstacle(this.px, this.pz, aimEndX, aimEndZ, this.obstacles, false);
-    if (laserBlock.hit) {
-      aimEndX = laserBlock.hitX;
-      aimEndZ = laserBlock.hitZ;
-    }
-
     this.scene.update(
       dt,
       {
         x: this.px,
         z: this.pz,
-        facingAngle: this.facingAngle,
+        yaw: this.yaw,
+        pitch: this.pitch,
         isMoving: moving,
         inCover: this.inCover,
-        aimEndX,
-        aimEndZ,
+        crouching: this.crouchHeld,
       },
       this.people,
       this.projectiles,
       cockpitUnderAttack,
     );
 
-    this.updateHud();
+    const aimed = this.findCrosshairTarget(12.5);
+    this.updateHud(aimed);
     this.rafId = requestAnimationFrame(this.loop);
   };
 

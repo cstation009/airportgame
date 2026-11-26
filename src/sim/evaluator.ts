@@ -42,11 +42,11 @@ export function evaluateDecision(
       correct: false,
       partial: false,
       action,
-      xpDelta: -25,
-      creditsDelta: -30,
+      xpDelta: -10,
+      creditsDelta: -15,
       headline: 'FALSE POSITIVE — CITATION ISSUED',
       explanation:
-        'This passenger had valid credentials and no prohibited items in their luggage. Double-check dates, UV seals, and open the bag to inspect ambiguous items before detaining.',
+        'This passenger had valid credentials and no prohibited items in their luggage. Double-check dates, UV seals, and open the bag [4] to inspect ambiguous items before detaining.',
       missedViolations: [],
       caughtViolations: [],
       falseFlagCount,
@@ -55,13 +55,13 @@ export function evaluateDecision(
 
   // Case 2: Player mistakenly cleared a violator
   if (action === 'CLEAR') {
-    const severityPenalty = hasContraband || hasWatchlist ? -60 : -35;
+    const severityPenalty = hasContraband || hasWatchlist ? -25 : -15;
     return {
       correct: false,
       partial: false,
       action,
       xpDelta: severityPenalty,
-      creditsDelta: hasContraband || hasWatchlist ? -65 : -35,
+      creditsDelta: hasContraband || hasWatchlist ? -25 : -15,
       headline:
         hasContraband || hasWatchlist
           ? 'SECURITY BREACH — THREAT PASSED!'

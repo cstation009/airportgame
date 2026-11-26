@@ -7,8 +7,8 @@ import type { CabinPerson, CoverObstacle, FlightProjectile } from './flightTypes
 
 interface PersonVisual {
   rig: PassengerRig;
-  markerRing: THREE.Mesh;
-  markerMat: THREE.MeshBasicMaterial;
+  overheadMarker: THREE.Mesh;
+  overheadMat: THREE.MeshBasicMaterial;
   stunArc: THREE.Mesh;
   weaponMesh: THREE.Mesh;
 }
@@ -26,7 +26,6 @@ function createCarpetTexture(): THREE.CanvasTexture {
   ctx.fillStyle = '#182436';
   ctx.fillRect(0, 0, 256, 256);
 
-  // Fine commercial aircraft woven carpet grain
   for (let y = 0; y < 256; y += 4) {
     ctx.fillStyle = y % 8 === 0 ? 'rgba(255,255,255,0.035)' : 'rgba(0,0,0,0.08)';
     ctx.fillRect(0, y, 256, 2);
@@ -69,16 +68,13 @@ export class FlightCabinScene {
   private readonly camera: THREE.PerspectiveCamera;
   private readonly pmrem: THREE.PMREMGenerator;
 
-  private readonly raycaster = new THREE.Raycaster();
-  private readonly aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -1.0);
-
-  // Player visuals
-  private readonly marshalRig: PassengerRig;
-  private readonly coverRing: THREE.Mesh;
-  private readonly coverRingMat: THREE.MeshBasicMaterial;
-  private readonly laserLine: THREE.Line;
-  private readonly laserMat: THREE.LineBasicMaterial;
+  // First-person held Tactical Taser X2 viewmodel attached to camera
+  private readonly taserGroup: THREE.Group;
+  private readonly taserMuzzleRef: THREE.Object3D;
   private readonly muzzleLight: THREE.PointLight;
+  private taserRecoil = 0;
+  private eyeHeight = 1.58;
+  private walkBob = 0;
 
   // Dynamic cabin lighting & scenery
   private readonly clouds: THREE.Mesh[] = [];
@@ -106,89 +102,114 @@ export class FlightCabinScene {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 1.18;
     container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color('#284b7a');
-    this.scene.fog = new THREE.Fog('#2a4e7c', 26, 62);
+    this.scene.fog = new THREE.Fog('#1f3858', 18, 45);
 
     this.camera = new THREE.PerspectiveCamera(
-      48,
+      66,
       (container.clientWidth || window.innerWidth) / (container.clientHeight || window.innerHeight),
-      0.2,
-      100,
+      0.06,
+      80,
     );
-    this.camera.position.set(0, 9.8, 14.5);
-    this.camera.lookAt(0, 0.8, 8.0);
+    this.camera.rotation.order = 'YXZ';
+    this.camera.position.set(0, 1.58, 9.8);
+    this.scene.add(this.camera);
 
     this.pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = this.pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.65;
+    this.scene.environmentIntensity = 0.72;
 
     this.buildLighting();
     this.buildSkyAndClouds();
     this.buildAircraftCabin(obstacles);
 
-    // Undercover Federal Air Marshal character
-    this.marshalRig = new PassengerRig(
-      {
-        skinTone: '#e8be9e',
-        hairStyle: 'short',
-        hairColor: '#231b16',
-        facialHair: 'stubble',
-        glasses: 'aviator',
-        jacketStyle: 'blazer',
-        jacketColor: '#1a2330',
-        shirtColor: '#e2e8f0',
-        hatColor: '#1a2330',
-        eyeColor: '#25211c',
-        heightScale: 1.04,
-        buildScale: 1.06,
-        genderPresentation: 'M',
-      },
-      0,
-    );
-    this.marshalRig.root.position.set(0, 0, 9.8);
-    this.scene.add(this.marshalRig.root);
-
-    // Tactical Taser X2 yellow/black body in Marshal's right hand
-    const taserMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.06, 0.08, 0.24),
-      new THREE.MeshStandardMaterial({ color: '#eab308', roughness: 0.35, metalness: 0.3 }),
-    );
-    taserMesh.position.set(0.24, 1.16, 0.3);
-    this.marshalRig.root.add(taserMesh);
-
-    // Subtle ground indicator ring (brightens cyan when safely crouched in Cover!)
-    this.coverRingMat = new THREE.MeshBasicMaterial({
-      color: '#38bdf8',
-      transparent: true,
-      opacity: 0.55,
-      side: THREE.DoubleSide,
-    });
-    this.coverRing = new THREE.Mesh(new THREE.RingGeometry(0.36, 0.48, 28), this.coverRingMat);
-    this.coverRing.rotation.x = -Math.PI / 2;
-    this.coverRing.position.set(0, 0.03, 9.8);
-    this.scene.add(this.coverRing);
-
-    // Live 3D Taser Laser Sightline
-    this.laserMat = new THREE.LineBasicMaterial({
-      color: '#38bdf8',
-      transparent: true,
-      opacity: 0.72,
-    });
-    const laserGeo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(0, 1.12, 9.8),
-      new THREE.Vector3(0, 1.12, 5.0),
-    ]);
-    this.laserLine = new THREE.Line(laserGeo, this.laserMat);
-    this.scene.add(this.laserLine);
+    // Build First-Person Held Tactical Taser X2 Viewmodel
+    const { group, muzzleRef } = this.buildFirstPersonTaser();
+    this.taserGroup = group;
+    this.taserMuzzleRef = muzzleRef;
+    this.camera.add(this.taserGroup);
 
     this.muzzleLight = new THREE.PointLight('#38bdf8', 0, 5.5, 1.8);
-    this.scene.add(this.muzzleLight);
+    this.camera.add(this.muzzleLight);
+    this.muzzleLight.position.set(0.24, -0.18, -0.65);
 
     window.addEventListener('resize', this.handleResize);
+  }
+
+  public getDomElement(): HTMLCanvasElement {
+    return this.renderer.domElement;
+  }
+
+  private buildFirstPersonTaser(): { group: THREE.Group; muzzleRef: THREE.Object3D } {
+    const group = new THREE.Group();
+    group.position.set(0.27, -0.24, -0.46);
+
+    const yellowMat = new THREE.MeshStandardMaterial({
+      color: '#eab308',
+      roughness: 0.34,
+      metalness: 0.22,
+    });
+    const darkMat = new THREE.MeshStandardMaterial({
+      color: '#181e28',
+      roughness: 0.42,
+      metalness: 0.45,
+    });
+    const gloveMat = new THREE.MeshStandardMaterial({
+      color: '#1e293b',
+      roughness: 0.75,
+    });
+    const sleeveMat = new THREE.MeshStandardMaterial({
+      color: '#161f2c',
+      roughness: 0.8,
+    });
+
+    // Main yellow tactical Taser X2 housing
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.068, 0.088, 0.24), yellowMat);
+    group.add(body);
+
+    // Top dark sight rail & status LED screen
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.018, 0.2), darkMat);
+    rail.position.set(0, 0.05, 0.01);
+    group.add(rail);
+
+    const ledMat = new THREE.MeshBasicMaterial({ color: '#38bdf8' });
+    const rearLed = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.018, 0.006), ledMat);
+    rearLed.position.set(0, 0.018, 0.122);
+    group.add(rearLed);
+
+    // Dual front cartridge bay + cyan laser diode emitter
+    const frontCart = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.072, 0.055), darkMat);
+    frontCart.position.set(0, -0.004, -0.14);
+    group.add(frontCart);
+
+    const laserDot = new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 8), ledMat);
+    laserDot.position.set(0, -0.024, -0.17);
+    group.add(laserDot);
+
+    // Angled grip & Marshal's gloved hand / suit cuff
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.12, 0.065), darkMat);
+    grip.position.set(0, -0.085, 0.055);
+    grip.rotation.x = 0.24;
+    group.add(grip);
+
+    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.08, 0.09), gloveMat);
+    hand.position.set(0, -0.085, 0.06);
+    group.add(hand);
+
+    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.055, 0.24, 12), sleeveMat);
+    cuff.rotation.x = Math.PI * 0.42;
+    cuff.position.set(0.02, -0.14, 0.22);
+    group.add(cuff);
+
+    const muzzleRef = new THREE.Object3D();
+    muzzleRef.position.set(0, 0.01, -0.18);
+    group.add(muzzleRef);
+
+    return { group, muzzleRef };
   }
 
   private handleResize = (): void => {
@@ -200,42 +221,38 @@ export class FlightCabinScene {
   };
 
   private buildLighting(): void {
-    const hemi = new THREE.HemisphereLight('#e2f1ff', '#334155', 1.1);
+    const hemi = new THREE.HemisphereLight('#e8f4ff', '#334155', 1.25);
     this.scene.add(hemi);
 
-    // Bright high-altitude sunlight streaming in from port windows
-    const sun = new THREE.DirectionalLight('#fff5e4', 1.9);
-    sun.position.set(-9, 14, 2);
+    const sun = new THREE.DirectionalLight('#fff5e4', 1.55);
+    sun.position.set(-8, 10, 4);
     sun.castShadow = true;
     sun.shadow.mapSize.set(1024, 1024);
-    sun.shadow.camera.near = 2;
-    sun.shadow.camera.far = 36;
-    sun.shadow.camera.left = -12;
-    sun.shadow.camera.right = 12;
-    sun.shadow.camera.top = 18;
-    sun.shadow.camera.bottom = -18;
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 32;
+    sun.shadow.camera.left = -10;
+    sun.shadow.camera.right = 10;
+    sun.shadow.camera.top = 16;
+    sun.shadow.camera.bottom = -16;
     this.scene.add(sun);
 
-    // Cool recessed cabin overhead aisle fill
-    const cabinFill = new THREE.DirectionalLight('#dbeafe', 0.85);
-    cabinFill.position.set(4, 12, 8);
+    const cabinFill = new THREE.DirectionalLight('#dbeafe', 0.9);
+    cabinFill.position.set(4, 6, 12);
     this.scene.add(cabinFill);
 
-    // Dynamic emergency alert strobe near cockpit
     this.alertLight = new THREE.PointLight('#ef4444', 0, 14, 1.4);
-    this.alertLight.position.set(0, 2.7, -11.5);
+    this.alertLight.position.set(0, 2.35, -11.5);
     this.scene.add(this.alertLight);
   }
 
   private buildSkyAndClouds(): void {
-    // Sunlit high-altitude cloud deck rushing past outside the fuselage
     const cloudMat = new THREE.MeshStandardMaterial({
-      color: '#e8f1fb',
+      color: '#eef5fc',
       roughness: 0.95,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.88,
     });
-    for (let i = 0; i < 24; i++) {
+    for (let i = 0; i < 20; i++) {
       const side = i % 2 === 0 ? -1 : 1;
       const puff = new THREE.Mesh(
         new THREE.SphereGeometry(2.4 + (i % 4) * 0.9, 10, 8),
@@ -243,9 +260,9 @@ export class FlightCabinScene {
       );
       puff.scale.set(1.8, 0.45, 2.6);
       puff.position.set(
-        side * (7.2 + (i % 5) * 2.4),
-        -3.2 - (i % 3) * 1.4,
-        -32 + i * 3.1,
+        side * (6.8 + (i % 4) * 2.2),
+        -1.2 - (i % 3) * 1.1,
+        -28 + i * 3.1,
       );
       this.scene.add(puff);
       this.clouds.push(puff);
@@ -262,14 +279,19 @@ export class FlightCabinScene {
       metalness: 0.04,
     });
     const fuselageMat = new THREE.MeshStandardMaterial({
-      color: '#dfe5ec',
-      roughness: 0.42,
-      metalness: 0.14,
+      color: '#e2e8f0',
+      roughness: 0.44,
+      metalness: 0.12,
     });
-    const outerSkinMat = new THREE.MeshStandardMaterial({
-      color: '#cbd5e1',
-      roughness: 0.28,
-      metalness: 0.42,
+    const ceilingMat = new THREE.MeshStandardMaterial({
+      color: '#cfd8e3',
+      roughness: 0.55,
+      metalness: 0.08,
+    });
+    const binMat = new THREE.MeshStandardMaterial({
+      color: '#d8e0ea',
+      roughness: 0.38,
+      metalness: 0.14,
     });
     const steelMat = new THREE.MeshStandardMaterial({
       map: steelTex.map,
@@ -277,11 +299,10 @@ export class FlightCabinScene {
       roughness: 0.28,
     });
     const windowGlassMat = new THREE.MeshStandardMaterial({
-      color: '#7dd3fc',
-      emissive: '#38bdf8',
-      emissiveIntensity: 0.55,
-      roughness: 0.12,
-      metalness: 0.2,
+      color: '#93c5fd',
+      emissive: '#60a5fa',
+      emissiveIntensity: 0.85,
+      roughness: 0.1,
     });
 
     // Main cabin deck floor
@@ -289,6 +310,23 @@ export class FlightCabinScene {
     floor.position.set(0, -0.1, -1.0);
     floor.receiveShadow = true;
     this.scene.add(floor);
+
+    // Enclosed curved cabin ceiling vault for true First-Person immersion!
+    const ceilingCenter = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.16, 26.8), ceilingMat);
+    ceilingCenter.position.set(0, 2.68, -1.0);
+    this.scene.add(ceilingCenter);
+
+    // Glowing overhead indirect cabin LED cove strips running the full length of the plane
+    const coveLedMat = new THREE.MeshStandardMaterial({
+      color: '#e0f2fe',
+      emissive: '#bae6fd',
+      emissiveIntensity: 1.9,
+    });
+    for (const sx of [-0.95, 0.95]) {
+      const ledStrip = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.05, 25.2), coveLedMat);
+      ledStrip.position.set(sx, 2.58, -1.0);
+      this.scene.add(ledStrip);
+    }
 
     // Photoluminescent emerald emergency aisle floor guide strips
     const stripMat = new THREE.MeshStandardMaterial({
@@ -302,43 +340,69 @@ export class FlightCabinScene {
       this.scene.add(strip);
     }
 
-    // Left & Right pressurized fuselage walls (cutaway at y = 2.15 so top-down view is unobstructed)
+    // Left & Right pressurized fuselage walls + sculpted overhead luggage stowage bins!
     for (const side of [-1, 1]) {
-      const wall = new THREE.Mesh(new THREE.BoxGeometry(0.28, 2.15, 26.8), fuselageMat);
-      wall.position.set(side * 2.72, 1.07, -1.0);
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(0.28, 2.7, 26.8), fuselageMat);
+      wall.position.set(side * 2.72, 1.35, -1.0);
       wall.receiveShadow = true;
-      wall.castShadow = true;
       this.scene.add(wall);
 
-      // Exterior metallic wing roots visible outside windows!
-      const wing = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.22, 6.2), outerSkinMat);
-      wing.position.set(side * 6.4, 0.1, 0.8);
-      wing.rotation.y = side * -0.25;
-      this.scene.add(wing);
+      // Overhead luggage bins sloping over seat rows
+      const bin = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.52, 25.4), binMat);
+      bin.position.set(side * 1.82, 2.24, -1.0);
+      bin.rotation.z = side * 0.24;
+      this.scene.add(bin);
 
-      // Oval glowing aircraft windows along cabin wall
+      // Metallic bin latch trim strip
+      const latchStrip = new THREE.Mesh(
+        new THREE.BoxGeometry(0.06, 0.05, 25.4),
+        new THREE.MeshStandardMaterial({ color: '#64748b', metalness: 0.7, roughness: 0.3 }),
+      );
+      latchStrip.position.set(side * 1.04, 2.02, -1.0);
+      this.scene.add(latchStrip);
+
+      // Illuminated oval aircraft windows
       for (let wz = -11.4; wz <= 10.2; wz += 1.65) {
         const winFrame = new THREE.Mesh(
-          new THREE.BoxGeometry(0.06, 0.52, 0.38),
+          new THREE.BoxGeometry(0.06, 0.56, 0.4),
           new THREE.MeshStandardMaterial({ color: '#94a3b8', roughness: 0.4 }),
         );
         winFrame.position.set(side * 2.57, 1.24, wz);
         this.scene.add(winFrame);
 
-        const pane = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.42, 0.28), windowGlassMat);
+        const pane = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.44, 0.3), windowGlassMat);
         pane.position.set(side * 2.56, 1.24, wz);
         this.scene.add(pane);
       }
     }
 
-    // Rear Galley Wall (z = +12.2)
-    const rearWall = new THREE.Mesh(new THREE.BoxGeometry(5.6, 2.25, 0.35), fuselageMat);
-    rearWall.position.set(0, 1.12, 12.2);
+    // Overhead glowing green EXIT / Fasten Seatbelt gantry arches
+    const exitMat = new THREE.MeshStandardMaterial({
+      color: '#ef4444',
+      emissive: '#ef4444',
+      emissiveIntensity: 1.8,
+    });
+    for (const gz of [-6.4, 1.8]) {
+      const box = new THREE.Mesh(
+        new THREE.BoxGeometry(0.46, 0.14, 0.08),
+        new THREE.MeshStandardMaterial({ color: '#0f172a', roughness: 0.4 }),
+      );
+      box.position.set(0, 2.46, gz);
+      this.scene.add(box);
+
+      const glow = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.07, 0.09), exitMat);
+      glow.position.set(0, 2.46, gz);
+      this.scene.add(glow);
+    }
+
+    // Rear Galley Wall
+    const rearWall = new THREE.Mesh(new THREE.BoxGeometry(5.6, 2.7, 0.35), fuselageMat);
+    rearWall.position.set(0, 1.35, 12.2);
     this.scene.add(rearWall);
 
-    // Reinforced Armored Flight Deck / Cockpit Wall & Door (z = -13.6)
-    const cockpitWall = new THREE.Mesh(new THREE.BoxGeometry(5.6, 2.45, 0.4), fuselageMat);
-    cockpitWall.position.set(0, 1.22, -13.8);
+    // Armored Flight Deck / Cockpit Wall & Door
+    const cockpitWall = new THREE.Mesh(new THREE.BoxGeometry(5.6, 2.75, 0.4), fuselageMat);
+    cockpitWall.position.set(0, 1.35, -13.8);
     this.scene.add(cockpitWall);
 
     const doorMat = new THREE.MeshStandardMaterial({
@@ -351,16 +415,15 @@ export class FlightCabinScene {
     cockpitDoor.castShadow = true;
     this.scene.add(cockpitDoor);
 
-    // Backlit FLIGHT DECK sign above cockpit door
     const signTex = createCockpitSignTexture();
     const signMat = new THREE.MeshStandardMaterial({
       map: signTex,
       emissiveMap: signTex,
       emissive: '#ffffff',
-      emissiveIntensity: 0.7,
+      emissiveIntensity: 0.8,
     });
     const signMesh = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.34, 0.08), signMat);
-    signMesh.position.set(0, 2.22, CABIN_BOUNDS.cockpitDoorZ - 0.3);
+    signMesh.position.set(0, 2.26, CABIN_BOUNDS.cockpitDoorZ - 0.3);
     this.scene.add(signMesh);
 
     this.cockpitLedMat = new THREE.MeshStandardMaterial({
@@ -369,10 +432,10 @@ export class FlightCabinScene {
       emissiveIntensity: 2.2,
     });
     const cockpitLed = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.07, 0.08), this.cockpitLedMat);
-    cockpitLed.position.set(0, 2.0, CABIN_BOUNDS.cockpitDoorZ - 0.28);
+    cockpitLed.position.set(0, 2.04, CABIN_BOUNDS.cockpitDoorZ - 0.28);
     this.scene.add(cockpitLed);
 
-    // Build physical 3D airline seats, bulkheads, and galley service carts matching CoverObstacle bounds!
+    // Airline seats, bulkheads, and galley carts matching CoverObstacle bounds
     const econSeatMat = new THREE.MeshStandardMaterial({ color: '#1e3a5f', roughness: 0.78 });
     const firstSeatMat = new THREE.MeshStandardMaterial({ color: '#3b2b26', roughness: 0.52, metalness: 0.08 });
     const headrestMat = new THREE.MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.85 });
@@ -390,7 +453,6 @@ export class FlightCabinScene {
         const seatCount = isFirstClass ? 2 : 3;
         const seatW = (w - 0.08) / seatCount;
 
-        // Metal under-frame bar
         const baseBar = new THREE.Mesh(new THREE.BoxGeometry(w - 0.1, 0.1, 0.24), armrestMat);
         baseBar.position.set(cx, 0.22, cz);
         this.scene.add(baseBar);
@@ -398,14 +460,12 @@ export class FlightCabinScene {
         for (let i = 0; i < seatCount; i++) {
           const sx = obs.minX + seatW * (i + 0.5) + 0.04;
 
-          // Seat cushion
           const cushion = new THREE.Mesh(new THREE.BoxGeometry(seatW - 0.06, 0.14, d * 0.78), mat);
           cushion.position.set(sx, 0.42, cz - 0.04);
           cushion.castShadow = true;
           cushion.receiveShadow = true;
           this.scene.add(cushion);
 
-          // Upright sculpted seatback (facing forward toward -Z)
           const back = new THREE.Mesh(new THREE.BoxGeometry(seatW - 0.06, 0.72, 0.14), mat);
           back.position.set(sx, 0.78, cz + d * 0.34);
           back.rotation.x = 0.12;
@@ -413,13 +473,11 @@ export class FlightCabinScene {
           back.receiveShadow = true;
           this.scene.add(back);
 
-          // Crisp white airline headrest cover (antimacassar)
           const cover = new THREE.Mesh(new THREE.BoxGeometry(seatW - 0.14, 0.2, 0.16), headrestMat);
           cover.position.set(sx, 1.04, cz + d * 0.36);
           cover.rotation.x = 0.12;
           this.scene.add(cover);
 
-          // Side armrests
           const arm = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.06, d * 0.65), armrestMat);
           arm.position.set(sx + seatW * 0.46, 0.58, cz);
           this.scene.add(arm);
@@ -435,7 +493,6 @@ export class FlightCabinScene {
         trim.position.set(cx, obs.height + 0.02, cz);
         this.scene.add(trim);
       } else if (obs.kind === 'galley_cart') {
-        // Brushed stainless airline beverage cart in aisle (waist-high tactical cover!)
         const cart = new THREE.Mesh(new THREE.BoxGeometry(w, obs.height, d), steelMat);
         cart.position.set(cx, obs.height * 0.5, cz);
         cart.castShadow = true;
@@ -449,7 +506,6 @@ export class FlightCabinScene {
         topLip.position.set(cx, obs.height + 0.02, cz);
         this.scene.add(topLip);
 
-        // Coffee carafe & tray detail on cart top
         const carafe = new THREE.Mesh(
           new THREE.CylinderGeometry(0.07, 0.08, 0.18, 12),
           new THREE.MeshStandardMaterial({ color: '#334155', metalness: 0.7, roughness: 0.25 }),
@@ -461,10 +517,9 @@ export class FlightCabinScene {
   }
 
   public syncManifest(people: CabinPerson[]): void {
-    // Remove old people meshes
     for (const vis of this.personVisuals.values()) {
       this.scene.remove(vis.rig.root);
-      this.scene.remove(vis.markerRing);
+      this.scene.remove(vis.overheadMarker);
       this.scene.remove(vis.stunArc);
     }
     this.personVisuals.clear();
@@ -475,7 +530,6 @@ export class FlightCabinScene {
       rig.root.rotation.y = p.facingAngle;
       this.scene.add(rig.root);
 
-      // Concealed hostile weapon (shown only once hijacker exposes themselves!)
       const weaponMesh = new THREE.Mesh(
         new THREE.BoxGeometry(0.06, 0.07, 0.26),
         new THREE.MeshStandardMaterial({ color: '#111827', metalness: 0.85, roughness: 0.2 }),
@@ -484,19 +538,16 @@ export class FlightCabinScene {
       weaponMesh.visible = false;
       rig.root.add(weaponMesh);
 
-      // Tactical overhead / floor status ring
-      const markerMat = new THREE.MeshBasicMaterial({
-        color: '#94a3b8',
+      // Crisp floating 3D diamond beacon above head so targets pop clearly in First-Person!
+      const overheadMat = new THREE.MeshBasicMaterial({
+        color: '#f59e0b',
         transparent: true,
         opacity: 0,
-        side: THREE.DoubleSide,
       });
-      const markerRing = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.44, 24), markerMat);
-      markerRing.rotation.x = -Math.PI / 2;
-      markerRing.position.set(p.x, 0.04, p.z);
-      this.scene.add(markerRing);
+      const overheadMarker = new THREE.Mesh(new THREE.OctahedronGeometry(0.11, 0), overheadMat);
+      overheadMarker.position.set(p.x, 1.95, p.z);
+      this.scene.add(overheadMarker);
 
-      // Crackling electric cyan stun aura around shocked hijackers
       const stunArc = new THREE.Mesh(
         new THREE.SphereGeometry(0.45, 12, 10),
         new THREE.MeshBasicMaterial({
@@ -509,52 +560,52 @@ export class FlightCabinScene {
       stunArc.visible = false;
       this.scene.add(stunArc);
 
-      this.personVisuals.set(p.id, { rig, markerRing, markerMat, stunArc, weaponMesh });
+      this.personVisuals.set(p.id, { rig, overheadMarker, overheadMat, stunArc, weaponMesh });
     }
   }
 
-  public spawnTaserBeam(x1: number, z1: number, x2: number, z2: number): void {
-    // Jagged electric cyan bolt between Marshal and target/cover impact
+  public spawnTaserBeamTo(targetX: number, targetY: number, targetZ: number): void {
+    const start = new THREE.Vector3();
+    this.taserMuzzleRef.getWorldPosition(start);
+
+    const end = new THREE.Vector3(targetX, targetY, targetZ);
     const pts: THREE.Vector3[] = [];
-    const steps = 6;
+    const steps = 7;
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
-      const jitter = i === 0 || i === steps ? 0 : (Math.random() - 0.5) * 0.16;
+      const jitter = i === 0 || i === steps ? 0 : (Math.random() - 0.5) * 0.1;
       pts.push(
         new THREE.Vector3(
-          THREE.MathUtils.lerp(x1, x2, t) + jitter,
-          1.1 + (Math.random() - 0.5) * 0.12,
-          THREE.MathUtils.lerp(z1, z2, t) + jitter,
+          THREE.MathUtils.lerp(start.x, end.x, t) + jitter,
+          THREE.MathUtils.lerp(start.y, end.y, t) + jitter * 0.7,
+          THREE.MathUtils.lerp(start.z, end.z, t) + jitter,
         ),
       );
     }
+
     const geo = new THREE.BufferGeometry().setFromPoints(pts);
     const mat = new THREE.LineBasicMaterial({ color: '#7dd3fc' });
     const line = new THREE.Line(geo, mat);
     this.scene.add(line);
-    this.taserBeams.push({ line, life: 0.18 });
+    this.taserBeams.push({ line, life: 0.2 });
 
-    this.muzzleLight.position.set(x1, 1.2, z1);
-    this.muzzleLight.intensity = 6.5;
-    this.shakeAmount = Math.max(this.shakeAmount, 0.08);
+    this.muzzleLight.intensity = 7.5;
+    this.taserRecoil = 1;
+    this.shakeAmount = Math.max(this.shakeAmount, 0.035);
   }
 
-  public triggerShake(amount = 0.14): void {
+  public triggerShake(amount = 0.08): void {
     this.shakeAmount = Math.max(this.shakeAmount, amount);
   }
 
-  public screenToCabinFloor(clientX: number, clientY: number): { x: number; z: number } | null {
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    const ndc = new THREE.Vector2(
-      ((clientX - rect.left) / rect.width) * 2 - 1,
-      -((clientY - rect.top) / rect.height) * 2 + 1,
-    );
-    this.raycaster.setFromCamera(ndc, this.camera);
-    const hit = new THREE.Vector3();
-    if (this.raycaster.ray.intersectPlane(this.aimPlane, hit)) {
-      return { x: hit.x, z: hit.z };
-    }
-    return null;
+  /** Cast a ray from center crosshair (or screen coordinates) for First-Person aiming */
+  public getAimRay(ndcX = 0, ndcY = 0): { origin: THREE.Vector3; dir: THREE.Vector3 } {
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera);
+    return {
+      origin: raycaster.ray.origin.clone(),
+      dir: raycaster.ray.direction.clone().normalize(),
+    };
   }
 
   public update(
@@ -562,46 +613,56 @@ export class FlightCabinScene {
     player: {
       x: number;
       z: number;
-      facingAngle: number;
+      yaw: number;
+      pitch: number;
       isMoving: boolean;
       inCover: boolean;
-      aimEndX: number;
-      aimEndZ: number;
+      crouching: boolean;
     },
     people: CabinPerson[],
     projectiles: FlightProjectile[],
     cockpitUnderAttack: boolean,
   ): void {
-    const safeDt = Math.min(dt, 0.05);
+    const safeDt = Math.max(0.001, Math.min(dt, 0.05));
     this.clockTime += safeDt;
 
-    // 1. Scroll sunlit high-altitude clouds outside aircraft windows
+    // 1. Scroll sunlit clouds outside the oval cabin windows
     for (const cloud of this.clouds) {
       cloud.position.z += safeDt * 15;
-      if (cloud.position.z > 28) {
-        cloud.position.z = -38;
-      }
+      if (cloud.position.z > 28) cloud.position.z = -38;
     }
 
-    // 2. Update Air Marshal rig, cover crouch posture, and live 3D laser sightline
-    this.marshalRig.root.position.set(player.x, player.inCover ? -0.34 : 0, player.z);
-    this.marshalRig.root.rotation.y = player.facingAngle;
-    this.marshalRig.update(safeDt, player.isMoving);
+    // 2. Smooth First-Person eye height, walk bob, and Taser X2 viewmodel animation
+    const targetEyeY = player.crouching ? 0.94 : 1.58;
+    this.eyeHeight = THREE.MathUtils.lerp(this.eyeHeight, targetEyeY, 1 - Math.exp(-safeDt * 10));
 
-    this.coverRing.position.set(player.x, 0.03, player.z);
-    this.coverRingMat.color.set(player.inCover ? '#22d3ee' : '#94a3b8');
-    this.coverRingMat.opacity = player.inCover ? 0.85 : 0.38;
+    if (player.isMoving) {
+      this.walkBob += safeDt * (player.crouching ? 6.5 : 10.2);
+    }
+    const bobY = player.isMoving ? Math.sin(this.walkBob) * 0.028 : Math.sin(this.clockTime * 1.8) * 0.004;
+    const bobX = player.isMoving ? Math.cos(this.walkBob * 0.5) * 0.016 : 0;
 
-    const laserPos = this.laserLine.geometry.attributes.position as THREE.BufferAttribute;
-    const beamY = player.inCover ? 0.78 : 1.12;
-    laserPos.setXYZ(0, player.x, beamY, player.z);
-    laserPos.setXYZ(1, player.aimEndX, beamY, player.aimEndZ);
-    laserPos.needsUpdate = true;
-    this.laserMat.color.set(player.inCover ? '#38bdf8' : '#22d3ee');
+    this.shakeAmount = Math.max(0, this.shakeAmount - safeDt * 0.55);
+    const sx = (Math.random() - 0.5) * this.shakeAmount;
+    const sy = (Math.random() - 0.5) * this.shakeAmount;
 
-    this.muzzleLight.intensity = Math.max(0, this.muzzleLight.intensity - safeDt * 38);
+    this.camera.position.set(player.x + sx, this.eyeHeight + bobY + sy, player.z);
+    this.camera.rotation.y = player.yaw;
+    this.camera.rotation.x = player.pitch;
 
-    // 3. Update every cabin passenger / hijacker rig
+    // First-person Taser recoil & smooth sway
+    this.taserRecoil = Math.max(0, this.taserRecoil - safeDt * 6.5);
+    this.taserGroup.position.set(
+      0.27 + bobX * 0.6,
+      -0.24 - Math.abs(bobY) * 0.5 + this.taserRecoil * 0.025,
+      -0.46 + this.taserRecoil * 0.065,
+    );
+    this.taserGroup.rotation.x = this.taserRecoil * 0.22;
+    this.taserGroup.rotation.z = player.inCover ? 0.18 : 0;
+
+    this.muzzleLight.intensity = Math.max(0, this.muzzleLight.intensity - safeDt * 42);
+
+    // 3. Update cabin passengers & clear overhead 3D threat beacons
     for (const p of people) {
       const vis = this.personVisuals.get(p.id);
       if (!vis) continue;
@@ -615,17 +676,13 @@ export class FlightCabinScene {
       const isStunned = p.state === 'stunned';
 
       let yOffset = 0;
-      if (isSeated) {
-        yOffset = p.ducked ? -0.58 : -0.36;
-      } else if (isSubdued) {
-        yOffset = -0.52;
-      } else if (p.state === 'taking_cover') {
-        yOffset = -0.32;
-      }
+      if (isSeated) yOffset = p.ducked ? -0.58 : -0.36;
+      else if (isSubdued) yOffset = -0.52;
+      else if (p.state === 'taking_cover') yOffset = -0.32;
 
       vis.rig.root.position.set(p.x, yOffset, p.z);
       vis.rig.root.rotation.y = p.facingAngle;
-      vis.rig.root.rotation.x = isSubdued ? 0.45 : isStunned ? Math.sin(this.clockTime * 35) * 0.14 : 0;
+      vis.rig.root.rotation.x = isSubdued ? 0.48 : isStunned ? Math.sin(this.clockTime * 35) * 0.14 : 0;
       vis.rig.update(safeDt, p.state === 'exposed_advancing');
 
       vis.weaponMesh.visible = isActive;
@@ -635,40 +692,44 @@ export class FlightCabinScene {
         vis.stunArc.rotation.y += safeDt * 12;
       }
 
-      // Status indicator rings on cabin carpet
-      vis.markerRing.position.set(p.x, 0.04, p.z);
+      // Floating 3D diamond beacon above head (spins gently & clearly marks threats in FPS view!)
+      const bobMarker = Math.sin(this.clockTime * 4.5) * 0.05;
+      vis.overheadMarker.position.set(p.x, (isSeated ? 1.56 : 1.98) + bobMarker, p.z);
+      vis.overheadMarker.rotation.y += safeDt * 2.4;
+
+      const distToPlayer = Math.hypot(p.x - player.x, p.z - player.z);
       if (isSubdued) {
-        vis.markerMat.color.set('#22c55e');
-        vis.markerMat.opacity = 0.85;
+        vis.overheadMat.color.set('#22c55e');
+        vis.overheadMat.opacity = 0.78;
       } else if (isActive || isStunned) {
-        vis.markerMat.color.set('#ef4444');
-        vis.markerMat.opacity = 0.72 + Math.sin(this.clockTime * 9) * 0.25;
+        vis.overheadMat.color.set('#ef4444');
+        vis.overheadMat.opacity = 0.92;
       } else if (p.scanned) {
-        vis.markerMat.color.set(p.role === 'hijacker' ? '#ef4444' : '#22c55e');
-        vis.markerMat.opacity = 0.65;
-      } else if (p.role === 'hijacker' && Math.hypot(p.x - player.x, p.z - player.z) < 4.4) {
-        // Subtle nervous tell shimmer when Marshal gets close enough to observe them!
-        vis.markerMat.color.set('#f59e0b');
-        vis.markerMat.opacity = 0.28 + Math.sin(this.clockTime * 5) * 0.18;
+        vis.overheadMat.color.set(p.role === 'hijacker' ? '#ef4444' : '#22c55e');
+        vis.overheadMat.opacity = p.role === 'hijacker' ? 0.9 : 0.35;
+      } else if (p.role === 'hijacker' && distToPlayer < 8.5) {
+        // Helpful golden/amber nervous tell beacon when approaching a disguised hijacker!
+        vis.overheadMat.color.set('#f59e0b');
+        vis.overheadMat.opacity = 0.55 + Math.sin(this.clockTime * 6) * 0.3;
       } else {
-        vis.markerMat.opacity = 0;
+        vis.overheadMat.opacity = 0;
       }
     }
 
-    // 4. Sync active projectiles
+    // 4. Sync hostile projectiles
     const aliveProjIds = new Set<string>();
     for (const proj of projectiles) {
       aliveProjIds.add(proj.id);
       let mesh = this.projectileMeshes.get(proj.id);
       if (!mesh) {
         mesh = new THREE.Mesh(
-          new THREE.SphereGeometry(proj.fromPlayer ? 0.07 : 0.085, 8, 8),
-          new THREE.MeshBasicMaterial({ color: proj.fromPlayer ? '#38bdf8' : '#f97316' }),
+          new THREE.SphereGeometry(0.08, 8, 8),
+          new THREE.MeshBasicMaterial({ color: '#f97316' }),
         );
         this.scene.add(mesh);
         this.projectileMeshes.set(proj.id, mesh);
       }
-      mesh.position.set(proj.x, 1.08, proj.z);
+      mesh.position.set(proj.x, 1.18, proj.z);
     }
     for (const [id, mesh] of this.projectileMeshes.entries()) {
       if (!aliveProjIds.has(id)) {
@@ -677,7 +738,7 @@ export class FlightCabinScene {
       }
     }
 
-    // 5. Fade electric taser beams
+    // 5. Fade electric cyan taser beams
     for (let i = this.taserBeams.length - 1; i >= 0; i--) {
       this.taserBeams[i].life -= safeDt;
       if (this.taserBeams[i].life <= 0) {
@@ -687,7 +748,7 @@ export class FlightCabinScene {
       }
     }
 
-    // 6. Cockpit alarm red strobe if any hijacker is breaching
+    // 6. Cockpit alarm red strobe if breached
     if (cockpitUnderAttack) {
       const pulse = Math.sin(this.clockTime * 14) > 0;
       this.cockpitLedMat.color.set('#ef4444');
@@ -698,21 +759,6 @@ export class FlightCabinScene {
       this.cockpitLedMat.emissive.set('#22c55e');
       this.alertLight.intensity = 0;
     }
-
-    // 7. Smooth top-down angled tactical follow camera tracking the Air Marshal
-    this.shakeAmount = Math.max(0, this.shakeAmount - safeDt * 0.75);
-    const sx = (Math.random() - 0.5) * this.shakeAmount;
-    const sz = (Math.random() - 0.5) * this.shakeAmount;
-
-    const targetCamX = player.x * 0.35 + sx;
-    const targetCamZ = THREE.MathUtils.clamp(player.z + 4.9, -9.2, 15.2) + sz;
-    const targetLookZ = THREE.MathUtils.clamp(player.z - 2.1, -13.5, 9.2);
-
-    const k = 1 - Math.exp(-safeDt * 7);
-    this.camera.position.x = THREE.MathUtils.lerp(this.camera.position.x, targetCamX, k);
-    this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, 9.4, k);
-    this.camera.position.z = THREE.MathUtils.lerp(this.camera.position.z, targetCamZ, k);
-    this.camera.lookAt(player.x * 0.25, 0.7, targetLookZ);
 
     this.renderer.render(this.scene, this.camera);
   }

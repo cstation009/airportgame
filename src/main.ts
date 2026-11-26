@@ -210,6 +210,10 @@ class SkyGuardGame {
       this.exitFlightMode();
     });
 
+    document.getElementById('btn-flight-lock')!.addEventListener('click', () => {
+      this.flightController?.togglePointerLock();
+    });
+
     document.getElementById('btn-flight-scan')!.addEventListener('click', () => {
       this.flightController?.triggerScanFromButton();
     });

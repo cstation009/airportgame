@@ -35,11 +35,11 @@ export const FLIGHT_MISSIONS: FlightMissionConfig[] = [
     threatTitle: 'Domestic Sky-Marshal Patrol',
     minCareerLevel: 1,
     hijackerCount: 2,
-    civilianCount: 16,
-    hijackerSpeed: 1.55,
-    hijackerFireInterval: 2.2,
-    rewardXp: 260,
-    rewardCredits: 180,
+    civilianCount: 14,
+    hijackerSpeed: 0.92,
+    hijackerFireInterval: 3.4,
+    rewardXp: 280,
+    rewardCredits: 200,
   },
   {
     id: 'flight-418',
@@ -49,11 +49,11 @@ export const FLIGHT_MISSIONS: FlightMissionConfig[] = [
     threatTitle: 'Transatlantic Red-Alert Intercept',
     minCareerLevel: 3,
     hijackerCount: 3,
-    civilianCount: 18,
-    hijackerSpeed: 1.85,
-    hijackerFireInterval: 1.85,
-    rewardXp: 380,
-    rewardCredits: 260,
+    civilianCount: 16,
+    hijackerSpeed: 1.12,
+    hijackerFireInterval: 2.9,
+    rewardXp: 400,
+    rewardCredits: 280,
   },
   {
     id: 'flight-909',
@@ -63,11 +63,11 @@ export const FLIGHT_MISSIONS: FlightMissionConfig[] = [
     threatTitle: 'Coordinated Cell — Critical Flight',
     minCareerLevel: 5,
     hijackerCount: 4,
-    civilianCount: 18,
-    hijackerSpeed: 2.1,
-    hijackerFireInterval: 1.55,
-    rewardXp: 520,
-    rewardCredits: 360,
+    civilianCount: 16,
+    hijackerSpeed: 1.32,
+    hijackerFireInterval: 2.4,
+    rewardXp: 560,
+    rewardCredits: 380,
   },
 ];
 
@@ -215,8 +215,8 @@ export function generateCabinManifest(
     [seatSlots[i], seatSlots[j]] = [seatSlots[j], seatSlots[i]];
   }
 
-  // Prefer aisle seats in rows 2..8 for hijackers so they can clearly step out & telegraph tells
-  const hijackerCandidates = seatSlots.filter((s) => s.isAisle && s.row >= 2 && s.row <= 8);
+  // Prefer aisle seats in rows 3..8 for hijackers so they're clearly visible ahead of the Marshal
+  const hijackerCandidates = seatSlots.filter((s) => s.isAisle && s.row >= 3 && s.row <= 8);
   const chosenHijackerSeats = hijackerCandidates.slice(0, mission.hijackerCount);
   const usedSeatCodes = new Set(chosenHijackerSeats.map((s) => s.seat));
   const civilianSeats = seatSlots
@@ -224,6 +224,7 @@ export function generateCabinManifest(
     .slice(0, mission.civilianCount);
 
   const people: CabinPerson[] = [];
+  const baseHijackerHp = mission.minCareerLevel >= 5 ? 2 : 1;
 
   chosenHijackerSeats.forEach((slot, idx) => {
     const app = makePassengerAppearance(rng, true);
@@ -243,12 +244,12 @@ export function generateCabinManifest(
       state: 'suspicious_tell',
       scanned: false,
       tellHint: HIJACKER_TELLS[idx % HIJACKER_TELLS.length],
-      // Staggered activation timers so tension builds organically!
-      activationTimer: 12 + idx * 11 + rng() * 5,
-      hp: 2,
-      maxHp: 2,
+      // Generous staggered timers so you tackle one threat at a time
+      activationTimer: 22 + idx * 16 + rng() * 6,
+      hp: baseHijackerHp,
+      maxHp: baseHijackerHp,
       stunTimer: 0,
-      fireCooldown: 1.1 + rng() * 0.7,
+      fireCooldown: 1.8 + rng() * 0.9,
       ducked: false,
     });
   });

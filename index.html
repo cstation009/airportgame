@@ -394,10 +394,22 @@
             </div>
           </div>
 
-          <button id="btn-abort-flight" class="icon-btn" type="button">
-            EXIT FLIGHT
-          </button>
+          <div class="flight-top-actions">
+            <button id="btn-flight-lock" class="icon-btn" type="button" title="Toggle 360° Pointer Lock mouse look (L)">
+              LOCK MOUSE [L]
+            </button>
+            <button id="btn-abort-flight" class="icon-btn" type="button">
+              EXIT FLIGHT
+            </button>
+          </div>
         </header>
+
+        <!-- First-Person Center Tactical Crosshair & Live Lock Indicator -->
+        <div id="fps-crosshair" class="fps-crosshair" aria-hidden="true">
+          <span class="xh-ring"></span>
+          <span class="xh-dot"></span>
+          <div id="fps-target-label" class="fps-target-label mono"></div>
+        </div>
 
         <aside id="flight-intel-toast" class="flight-intel-toast hidden" role="status">
           <div class="intel-title" id="flight-intel-title">CABIN INTEL</div>
@@ -406,17 +418,18 @@
 
         <footer class="flight-bottom-bar">
           <div class="flight-controls-guide mono">
-            <span><kbd>WASD</kbd> Move Aisle</span>
-            <span><kbd>SHIFT</kbd> Crouch Cover</span>
-            <span><kbd>E</kbd> / <kbd>RMB</kbd> Scan Passenger</span>
-            <span><kbd>LMB</kbd> Fire Taser</span>
-            <span><kbd>R</kbd> Reload</span>
+            <span><kbd>WASD</kbd> Walk</span>
+            <span><kbd>Mouse</kbd> / <kbd>←→</kbd> Look</span>
+            <span><kbd>SHIFT</kbd> Duck Cover</span>
+            <span><kbd>LMB</kbd> Zap Hijacker</span>
+            <span><kbd>E</kbd> Scan</span>
+            <span><kbd>R</kbd> Recharge</span>
           </div>
           <div class="flight-tactical-status">
-            <span id="flight-cover-pill" class="cover-pill">EXPOSED (HOLD SHIFT NEAR SEATS)</span>
+            <span id="flight-cover-pill" class="cover-pill">STANDING (HOLD SHIFT TO DUCK)</span>
             <button id="btn-flight-scan" class="hw-btn" type="button">SCAN <kbd>E</kbd></button>
             <button id="btn-flight-reload" class="hw-btn" type="button">
-              <span id="flight-taser-status">2 / 2 CARTRIDGES</span>
+              <span id="flight-taser-status">4 / 4 TASER</span>
             </button>
           </div>
         </footer>
@@ -425,10 +438,10 @@
       <!-- Air Marshal Flight Mission Selector Modal -->
       <div id="modal-flight-select" class="modal-backdrop hidden">
         <div class="modal-panel flight-select-panel">
-          <div class="modal-kicker">PHASE 2 • FEDERAL AIR MARSHAL SERVICE</div>
+          <div class="modal-kicker">PHASE 2 • FIRST-PERSON AIR MARSHAL MODE</div>
           <h2>IN-FLIGHT HIJACKER INTERDICTION</h2>
           <p class="modal-lead">
-            Move up the 3D cabin aisle, observe nervous tells, scan passengers (<kbd>E</kbd> / Right-Click) to unmask disguised hijackers, crouch behind seats &amp; galley carts (<kbd>Shift</kbd>) for cover, and subdue threats with your Taser (<kbd>Left-Click</kbd>) before they breach the flight deck.
+            Walk down the 3D airplane cabin aisle in <strong>First-Person</strong> (<kbd>WASD</kbd> + mouse or <kbd>←/→</kbd>). Your visor automatically highlights nearby hijackers in red—hold <kbd>Shift</kbd> to duck behind seats for cover and <kbd>Left-Click</kbd> to zap them with your Taser before they reach the cockpit!
           </p>
 
           <div id="flight-mission-list" class="flight-mission-list"></div>
